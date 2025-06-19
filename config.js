@@ -27,6 +27,10 @@ export const GAME_CONFIG = {
       PLAYER1: { x: 200, y: 610 },
       PLAYER2: { x: 600, y: 610 },
     },
+    BG_IMAGES: {
+      PLAYER1: "assets/head-1.png", // Path to Player 1 background image
+      PLAYER2: "assets/head-2.png", // Path to Player 2 background image
+    },
     ATTRIBUTES: {
       PLAYER1: {
         speed: 1.0,

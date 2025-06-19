@@ -39,7 +39,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    this.load.image("pixel", PIXEL_SPRITE);
+    this.load.image("player1", "assets/head-1.png");
+    this.load.image("player2", "assets/head-2.png");
+    this.load.image("ball", "assets/ball.png");
   }
 
   resetGameState() {
@@ -111,7 +113,11 @@ export class GameScene extends Phaser.Scene {
 
     this.ground = this.physics.add.staticGroup();
     this.ground
-      .create(GAME_CONFIG.CANVAS_WIDTH / 2, GAME_CONFIG.CANVAS_HEIGHT + 10, "pixel")
+      .create(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT + 10,
+        "pixel"
+      )
       .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
       .refreshBody();
 
@@ -123,7 +129,11 @@ export class GameScene extends Phaser.Scene {
 
     this.rightWall = this.physics.add.staticGroup();
     this.rightWall
-      .create(GAME_CONFIG.CANVAS_WIDTH + 10, GAME_CONFIG.CANVAS_HEIGHT / 2, "pixel")
+      .create(
+        GAME_CONFIG.CANVAS_WIDTH + 10,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        "pixel"
+      )
       .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
       .refreshBody();
   }
@@ -147,7 +157,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
         "AI"
       );
-      
+
       // Set AI difficulty (can be made configurable later)
       this.player2.setDifficulty("medium");
     } else {
@@ -169,7 +179,8 @@ export class GameScene extends Phaser.Scene {
     if (this.gameMode === "vsAI") {
       controlText = "Player 1: Arrow Keys + Right Shift (Shoot) | AI Player";
     } else {
-      controlText = "Player 1: Arrow Keys + Right Shift (Shoot) | Player 2: WASD Keys + Space (Shoot)";
+      controlText =
+        "Player 1: Arrow Keys + Right Shift (Shoot) | Player 2: WASD Keys + Space (Shoot)";
     }
 
     this.add
@@ -186,48 +197,54 @@ export class GameScene extends Phaser.Scene {
         }
       )
       .setOrigin(0.5, 0.5);
-      
+
     // Add powerup bar under the controls text
-    this.powerupBarText = this.add.text(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.UI.POWERUP_BAR_Y,
-      "🌟 Power-ups will appear on the field - touch them with the ball! 🌟",
-      {
-        fontSize: GAME_CONFIG.UI.FONT_SIZES.POWERUP_BAR,
-        fill: "#ffff00",
-        backgroundColor: "#333333",
-        padding: { x: 8, y: 4 },
-        align: "center",
-        stroke: "#000000",
-        strokeThickness: 1,
-      }
-    ).setOrigin(0.5, 0.5).setDepth(3000);
+    this.powerupBarText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.UI.POWERUP_BAR_Y,
+        "🌟 Power-ups will appear on the field - touch them with the ball! 🌟",
+        {
+          fontSize: GAME_CONFIG.UI.FONT_SIZES.POWERUP_BAR,
+          fill: "#ffff00",
+          backgroundColor: "#333333",
+          padding: { x: 8, y: 4 },
+          align: "center",
+          stroke: "#000000",
+          strokeThickness: 1,
+        }
+      )
+      .setOrigin(0.5, 0.5)
+      .setDepth(3000);
   }
 
-  createBall() {
-    // Create ball as a circle with config settings
-    this.ball = this.add.circle(
-      GAME_CONFIG.BALL.STARTING_POSITION.x,
-      GAME_CONFIG.BALL.STARTING_POSITION.y,
-      GAME_CONFIG.BALL.SIZE / 2,
-      GAME_CONFIG.COLORS.WHITE
-    );
-    this.physics.add.existing(this.ball);
-    this.ball.body.setCircle(GAME_CONFIG.BALL.SIZE / 2);
+createBall() {
+  // Create the ball using an image sprite instead of a circle
+  this.ball = this.physics.add.sprite(
+    GAME_CONFIG.BALL.STARTING_POSITION.x,
+    GAME_CONFIG.BALL.STARTING_POSITION.y,
+    "ball" // <-- the key from preload()
+  );
 
-    // Ball physics
-    this.ball.body.setBounce(GAME_CONFIG.BALL.BOUNCE);
-    this.ball.body.setCollideWorldBounds(true);
-    this.ball.body.setDragX(GAME_CONFIG.BALL.DRAG_X);
-    this.ball.body.setDragY(GAME_CONFIG.BALL.DRAG_Y);
-    this.ball.body.setMaxVelocity(
-      GAME_CONFIG.BALL.MAX_VELOCITY,
-      GAME_CONFIG.BALL.MAX_VELOCITY
-    );
+  // Scale the image to match the desired ball size
+  const texture = this.textures.get("ball").getSourceImage();
+  const scaleX = GAME_CONFIG.BALL.SIZE / texture.width;
+  const scaleY = GAME_CONFIG.BALL.SIZE / texture.height;
+  this.ball.setScale(scaleX, scaleY);
 
-    this.setupBallCollisions();
-    this.setupPlayerBallInteractions();
-  }
+  // Set physics properties
+  this.ball.setBounce(GAME_CONFIG.BALL.BOUNCE);
+  this.ball.setCollideWorldBounds(true);
+  this.ball.setDragX(GAME_CONFIG.BALL.DRAG_X);
+  this.ball.setDragY(GAME_CONFIG.BALL.DRAG_Y);
+  this.ball.setMaxVelocity(
+    GAME_CONFIG.BALL.MAX_VELOCITY,
+    GAME_CONFIG.BALL.MAX_VELOCITY
+  );
+
+  this.setupBallCollisions();
+  this.setupPlayerBallInteractions();
+}
 
   setupBallCollisions() {
     // Ball collisions with walls and ground
@@ -278,7 +295,7 @@ export class GameScene extends Phaser.Scene {
   kickBall(player, ball) {
     // Check if player is shooting or just moving normally
     const isShooting = player.isCurrentlyShooting();
-    
+
     // Calculate kick direction and force using player's attributes
     const dx = ball.x - player.sprite.x;
     const dy = ball.y - player.sprite.y;
@@ -299,10 +316,14 @@ export class GameScene extends Phaser.Scene {
       kickForce = player.getShootPower() + playerSpeed * 1.5;
       kickX = dirX * kickForce;
       kickY = dirY * kickForce + GAME_CONFIG.BALL.KICK_UPWARD_FORCE * 0.5; // Less upward force for shooting
-      
+
       // Add shooting visual effect
-      this.createShootEffect(player.sprite.x, player.sprite.y, player.attributes.color);
-      
+      this.createShootEffect(
+        player.sprite.x,
+        player.sprite.y,
+        player.attributes.color
+      );
+
       // Log shooting action
       this.logToConsole(`${player.attributes.name} shoots! 💥`, "powerup");
     } else {
@@ -339,8 +360,12 @@ export class GameScene extends Phaser.Scene {
       GAME_CONFIG.FEEDBACK.GOAL_MESSAGES[
         Math.floor(Math.random() * GAME_CONFIG.FEEDBACK.GOAL_MESSAGES.length)
       ];
-    const scoringPlayerName = scoringPlayer === "player1" ? "Player 1" : 
-      (this.gameMode === "vsAI" ? "AI" : "Player 2");
+    const scoringPlayerName =
+      scoringPlayer === "player1"
+        ? "Player 1"
+        : this.gameMode === "vsAI"
+        ? "AI"
+        : "Player 2";
     this.logToConsole(
       `${goalMessage} ${scoringPlayerName} scores! Score: ${this.player1Score}-${this.player2Score}`,
       "goal"
@@ -431,78 +456,91 @@ export class GameScene extends Phaser.Scene {
 
   createUI() {
     // Move scoreboard and timer to top center
-    this.timerText = this.add.text(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.UI.TIMER_Y,
-      "Time: 01:00",
-      {
-        fontSize: GAME_CONFIG.UI.FONT_SIZES.TIMER,
-        fill: "#fff",
-        backgroundColor: "#222",
-        padding: { x: 16, y: 8 },
-        align: "center",
-        fontStyle: 'bold',
-        borderRadius: 12,
-      }
-    ).setOrigin(0.5, 0.5).setDepth(3000);
+    this.timerText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.UI.TIMER_Y,
+        "Time: 01:00",
+        {
+          fontSize: GAME_CONFIG.UI.FONT_SIZES.TIMER,
+          fill: "#fff",
+          backgroundColor: "#222",
+          padding: { x: 16, y: 8 },
+          align: "center",
+          fontStyle: "bold",
+          borderRadius: 12,
+        }
+      )
+      .setOrigin(0.5, 0.5)
+      .setDepth(3000);
 
-    this.scoreText = this.add.text(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.UI.SCORE_Y,
-      "Player 1: 0  -  Player 2: 0",
-      {
-        fontSize: GAME_CONFIG.UI.FONT_SIZES.SCORE,
-        fill: "#fff",
-        backgroundColor: "#1976d2",
-        padding: { x: 18, y: 8 },
-        align: "center",
-        fontStyle: 'bold',
-        borderRadius: 12,
-        stroke: '#000',
-        strokeThickness: 3
-      }
-    ).setOrigin(0.5, 0.5).setDepth(3000);
+    this.scoreText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.UI.SCORE_Y,
+        "Player 1: 0  -  Player 2: 0",
+        {
+          fontSize: GAME_CONFIG.UI.FONT_SIZES.SCORE,
+          fill: "#fff",
+          backgroundColor: "#1976d2",
+          padding: { x: 18, y: 8 },
+          align: "center",
+          fontStyle: "bold",
+          borderRadius: 12,
+          stroke: "#000",
+          strokeThickness: 3,
+        }
+      )
+      .setOrigin(0.5, 0.5)
+      .setDepth(3000);
 
     // Goal effect text
-    this.goalEffectText = this.add.text(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.CANVAS_HEIGHT / 2,
-      "GOAL!",
-      {
-        fontSize: GAME_CONFIG.UI.FONT_SIZES.GOAL_EFFECT,
-        fill: "#ffff00",
-        stroke: "#000000",
-        strokeThickness: 4,
-        align: "center",
-        fontStyle: 'bold',
-      }
-    ).setOrigin(0.5, 0.5).setDepth(4000).setVisible(false);
+    this.goalEffectText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        "GOAL!",
+        {
+          fontSize: GAME_CONFIG.UI.FONT_SIZES.GOAL_EFFECT,
+          fill: "#ffff00",
+          stroke: "#000000",
+          strokeThickness: 4,
+          align: "center",
+          fontStyle: "bold",
+        }
+      )
+      .setOrigin(0.5, 0.5)
+      .setDepth(4000)
+      .setVisible(false);
 
     // Win message
-    this.winText = this.add.text(GAME_CONFIG.CANVAS_WIDTH / 2, 300, "", {
-      fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
-      fill: "#00ff00",
-      stroke: "#000000",
-      strokeThickness: 3,
-      align: "center",
-      fontStyle: 'bold',
-    }).setOrigin(0.5, 0.5).setDepth(4000).setVisible(false);
+    this.winText = this.add
+      .text(GAME_CONFIG.CANVAS_WIDTH / 2, 300, "", {
+        fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
+        fill: "#00ff00",
+        stroke: "#000000",
+        strokeThickness: 3,
+        align: "center",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(4000)
+      .setVisible(false);
 
     // Restart button
-    this.restartButton = this.add.text(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      400,
-      "Press R to Return to Menu",
-      {
+    this.restartButton = this.add
+      .text(GAME_CONFIG.CANVAS_WIDTH / 2, 400, "Press R to Return to Menu", {
         fontSize: GAME_CONFIG.UI.FONT_SIZES.RESTART_BUTTON,
         fill: "#fff",
         backgroundColor: "#007700",
         padding: { x: 15, y: 8 },
         align: "center",
         borderRadius: 8,
-        fontStyle: 'bold',
-      }
-    ).setOrigin(0.5, 0.5).setDepth(4000).setVisible(false);
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(4000)
+      .setVisible(false);
 
     this.restartKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.R
@@ -730,27 +768,31 @@ export class GameScene extends Phaser.Scene {
     const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
     const player2Color = this.gameMode === "vsAI" ? "#ff6600" : "#d32f2f";
     const player2BgColor = this.gameMode === "vsAI" ? "#331100" : "#220011";
-    
-    this.add.text(GAME_CONFIG.CANVAS_WIDTH - 20, 130, `${player2Name} 🔴`, {
-      fontSize: "16px",
-      fill: player2Color,
-      fontStyle: "bold",
-      stroke: "#000000",
-      strokeThickness: 1,
-    }).setOrigin(1, 0);
-    this.player2StatsText = this.add.text(
-      GAME_CONFIG.CANVAS_WIDTH - 20,
-      150,
-      "⚡SPD: 1.0 | 🦘JMP: 1.0 | 📏SIZ: 1.0 | ⚽KCK: 1.0 | 🎯SHT: 1.0",
-      {
-        fontSize: "12px",
-        fill: "#fff",
-        backgroundColor: player2BgColor,
-        padding: { x: 6, y: 3 },
-        stroke: player2Color,
+
+    this.add
+      .text(GAME_CONFIG.CANVAS_WIDTH - 20, 130, `${player2Name} 🔴`, {
+        fontSize: "16px",
+        fill: player2Color,
+        fontStyle: "bold",
+        stroke: "#000000",
         strokeThickness: 1,
-      }
-    ).setOrigin(1, 0);
+      })
+      .setOrigin(1, 0);
+    this.player2StatsText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH - 20,
+        150,
+        "⚡SPD: 1.0 | 🦘JMP: 1.0 | 📏SIZ: 1.0 | ⚽KCK: 1.0 | 🎯SHT: 1.0",
+        {
+          fontSize: "12px",
+          fill: "#fff",
+          backgroundColor: player2BgColor,
+          padding: { x: 6, y: 3 },
+          stroke: player2Color,
+          strokeThickness: 1,
+        }
+      )
+      .setOrigin(1, 0);
   }
 
   updatePlayerStatsDisplay() {
@@ -908,7 +950,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   checkBallBounds() {
-    if (this.ball.y > GAME_CONFIG.CANVAS_HEIGHT + 50 || this.ball.x < -50 || this.ball.x > GAME_CONFIG.CANVAS_WIDTH + 50) {
+    if (
+      this.ball.y > GAME_CONFIG.CANVAS_HEIGHT + 50 ||
+      this.ball.x < -50 ||
+      this.ball.x > GAME_CONFIG.CANVAS_WIDTH + 50
+    ) {
       this.resetBall();
     }
   }
@@ -998,53 +1044,122 @@ export class GameScene extends Phaser.Scene {
   }
 
   createGoalPosts() {
-    const goalY = GAME_CONFIG.FIELD.GROUND_Y - GAME_CONFIG.FIELD.GOAL_HEIGHT / 2;
+    const goalY =
+      GAME_CONFIG.FIELD.GROUND_Y - GAME_CONFIG.FIELD.GOAL_HEIGHT / 2;
     const crossbarY = goalY - GAME_CONFIG.FIELD.GOAL_HEIGHT / 2;
 
     // Left goal posts and crossbar
-    this.add.rectangle(50, goalY, 8, GAME_CONFIG.FIELD.GOAL_HEIGHT, GAME_CONFIG.COLORS.WHITE);
-    this.add.rectangle(100, goalY, 8, GAME_CONFIG.FIELD.GOAL_HEIGHT, GAME_CONFIG.COLORS.WHITE);
+    this.add.rectangle(
+      50,
+      goalY,
+      8,
+      GAME_CONFIG.FIELD.GOAL_HEIGHT,
+      GAME_CONFIG.COLORS.WHITE
+    );
+    this.add.rectangle(
+      100,
+      goalY,
+      8,
+      GAME_CONFIG.FIELD.GOAL_HEIGHT,
+      GAME_CONFIG.COLORS.WHITE
+    );
     this.add.rectangle(75, crossbarY, 50, 8, GAME_CONFIG.COLORS.WHITE);
-    this.add.rectangle(75, GAME_CONFIG.FIELD.GROUND_Y, GAME_CONFIG.FIELD.GOAL_WIDTH, 4, GAME_CONFIG.COLORS.WHITE);
+    this.add.rectangle(
+      75,
+      GAME_CONFIG.FIELD.GROUND_Y,
+      GAME_CONFIG.FIELD.GOAL_WIDTH,
+      4,
+      GAME_CONFIG.COLORS.WHITE
+    );
 
     // Right goal posts and crossbar
-    this.add.rectangle(GAME_CONFIG.CANVAS_WIDTH - 50, goalY, 8, GAME_CONFIG.FIELD.GOAL_HEIGHT, GAME_CONFIG.COLORS.WHITE);
-    this.add.rectangle(GAME_CONFIG.CANVAS_WIDTH - 100, goalY, 8, GAME_CONFIG.FIELD.GOAL_HEIGHT, GAME_CONFIG.COLORS.WHITE);
-    this.add.rectangle(GAME_CONFIG.CANVAS_WIDTH - 75, crossbarY, 50, 8, GAME_CONFIG.COLORS.WHITE);
-    this.add.rectangle(GAME_CONFIG.CANVAS_WIDTH - 75, GAME_CONFIG.FIELD.GROUND_Y, GAME_CONFIG.FIELD.GOAL_WIDTH, 4, GAME_CONFIG.COLORS.WHITE);
+    this.add.rectangle(
+      GAME_CONFIG.CANVAS_WIDTH - 50,
+      goalY,
+      8,
+      GAME_CONFIG.FIELD.GOAL_HEIGHT,
+      GAME_CONFIG.COLORS.WHITE
+    );
+    this.add.rectangle(
+      GAME_CONFIG.CANVAS_WIDTH - 100,
+      goalY,
+      8,
+      GAME_CONFIG.FIELD.GOAL_HEIGHT,
+      GAME_CONFIG.COLORS.WHITE
+    );
+    this.add.rectangle(
+      GAME_CONFIG.CANVAS_WIDTH - 75,
+      crossbarY,
+      50,
+      8,
+      GAME_CONFIG.COLORS.WHITE
+    );
+    this.add.rectangle(
+      GAME_CONFIG.CANVAS_WIDTH - 75,
+      GAME_CONFIG.FIELD.GROUND_Y,
+      GAME_CONFIG.FIELD.GOAL_WIDTH,
+      4,
+      GAME_CONFIG.COLORS.WHITE
+    );
 
     // Goal areas
-    const leftGoalArea = this.add.rectangle(125, goalY, GAME_CONFIG.FIELD.GOAL_AREA_WIDTH, GAME_CONFIG.FIELD.GOAL_HEIGHT + 40, GAME_CONFIG.COLORS.FIELD_GREEN);
+    const leftGoalArea = this.add.rectangle(
+      125,
+      goalY,
+      GAME_CONFIG.FIELD.GOAL_AREA_WIDTH,
+      GAME_CONFIG.FIELD.GOAL_HEIGHT + 40,
+      GAME_CONFIG.COLORS.FIELD_GREEN
+    );
     leftGoalArea.setStrokeStyle(3, GAME_CONFIG.COLORS.WHITE);
 
-    const rightGoalArea = this.add.rectangle(GAME_CONFIG.CANVAS_WIDTH - 125, goalY, GAME_CONFIG.FIELD.GOAL_AREA_WIDTH, GAME_CONFIG.FIELD.GOAL_HEIGHT + 40, GAME_CONFIG.COLORS.FIELD_GREEN);
+    const rightGoalArea = this.add.rectangle(
+      GAME_CONFIG.CANVAS_WIDTH - 125,
+      goalY,
+      GAME_CONFIG.FIELD.GOAL_AREA_WIDTH,
+      GAME_CONFIG.FIELD.GOAL_HEIGHT + 40,
+      GAME_CONFIG.COLORS.FIELD_GREEN
+    );
     rightGoalArea.setStrokeStyle(3, GAME_CONFIG.COLORS.WHITE);
 
     // Physical crossbars to block ball from entering from above
     this.leftCrossbar = this.physics.add.staticGroup();
-    this.leftCrossbar.create(75, crossbarY, "pixel").setScale(50, 8).refreshBody();
+    this.leftCrossbar
+      .create(75, crossbarY, "pixel")
+      .setScale(50, 8)
+      .refreshBody();
 
     this.rightCrossbar = this.physics.add.staticGroup();
-    this.rightCrossbar.create(GAME_CONFIG.CANVAS_WIDTH - 75, crossbarY, "pixel").setScale(50, 8).refreshBody();
+    this.rightCrossbar
+      .create(GAME_CONFIG.CANVAS_WIDTH - 75, crossbarY, "pixel")
+      .setScale(50, 8)
+      .refreshBody();
 
     // Fixed Goal zones for collision detection - positioned only at the goal mouth opening
     this.leftGoalZone = this.physics.add.staticGroup();
     // Position the goal zone at the goal mouth, between the posts and below the crossbar
-    this.leftGoalZone.create(75, goalY + 10, "pixel").setScale(40, GAME_CONFIG.FIELD.GOAL_HEIGHT - 10).refreshBody();
+    this.leftGoalZone
+      .create(75, goalY + 10, "pixel")
+      .setScale(40, GAME_CONFIG.FIELD.GOAL_HEIGHT - 10)
+      .refreshBody();
 
     this.rightGoalZone = this.physics.add.staticGroup();
-    // Position the goal zone at the goal mouth, between the posts and below the crossbar  
-    this.rightGoalZone.create(GAME_CONFIG.CANVAS_WIDTH - 75, goalY + 10, "pixel").setScale(40, GAME_CONFIG.FIELD.GOAL_HEIGHT - 10).refreshBody();
+    // Position the goal zone at the goal mouth, between the posts and below the crossbar
+    this.rightGoalZone
+      .create(GAME_CONFIG.CANVAS_WIDTH - 75, goalY + 10, "pixel")
+      .setScale(40, GAME_CONFIG.FIELD.GOAL_HEIGHT - 10)
+      .refreshBody();
   }
 
   createEnhancedFieldMarkings() {
     // Main field outline
-    this.add.rectangle(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.CANVAS_HEIGHT / 2,
-      GAME_CONFIG.CANVAS_WIDTH - 4,
-      GAME_CONFIG.CANVAS_HEIGHT - 4
-    ).setStrokeStyle(4, GAME_CONFIG.COLORS.WHITE);
+    this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH - 4,
+        GAME_CONFIG.CANVAS_HEIGHT - 4
+      )
+      .setStrokeStyle(4, GAME_CONFIG.COLORS.WHITE);
 
     // Center line
     this.add.rectangle(
@@ -1073,8 +1188,16 @@ export class GameScene extends Phaser.Scene {
     );
 
     // Add crowd only at the top (removed bottom crowd)
-    this.add.rectangle(GAME_CONFIG.CANVAS_WIDTH / 2, 10, GAME_CONFIG.CANVAS_WIDTH, 20, 0x888888).setDepth(2000); // Top stand only
-    
+    this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        10,
+        GAME_CONFIG.CANVAS_WIDTH,
+        20,
+        0x888888
+      )
+      .setDepth(2000); // Top stand only
+
     // Add simple "people" cheering only at the top
     for (let i = 0; i < Math.floor(GAME_CONFIG.CANVAS_WIDTH / 30); i++) {
       const color = Phaser.Display.Color.RandomRGB().color;
@@ -1084,19 +1207,47 @@ export class GameScene extends Phaser.Scene {
     // Goal areas (penalty boxes)
     const goalAreaWidth = 120;
     const goalAreaHeight = 200;
-    this.add.rectangle(goalAreaWidth / 2, GAME_CONFIG.CANVAS_HEIGHT / 2, goalAreaWidth, goalAreaHeight).setStrokeStyle(3, GAME_CONFIG.COLORS.WHITE);
-    this.add.rectangle(GAME_CONFIG.CANVAS_WIDTH - goalAreaWidth / 2, GAME_CONFIG.CANVAS_HEIGHT / 2, goalAreaWidth, goalAreaHeight).setStrokeStyle(3, GAME_CONFIG.COLORS.WHITE);
+    this.add
+      .rectangle(
+        goalAreaWidth / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        goalAreaWidth,
+        goalAreaHeight
+      )
+      .setStrokeStyle(3, GAME_CONFIG.COLORS.WHITE);
+    this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH - goalAreaWidth / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        goalAreaWidth,
+        goalAreaHeight
+      )
+      .setStrokeStyle(3, GAME_CONFIG.COLORS.WHITE);
 
     // Penalty spots
-    this.add.circle(80, GAME_CONFIG.CANVAS_HEIGHT / 2, 3, GAME_CONFIG.COLORS.WHITE);
-    this.add.circle(GAME_CONFIG.CANVAS_WIDTH - 80, GAME_CONFIG.CANVAS_HEIGHT / 2, 3, GAME_CONFIG.COLORS.WHITE);
+    this.add.circle(
+      80,
+      GAME_CONFIG.CANVAS_HEIGHT / 2,
+      3,
+      GAME_CONFIG.COLORS.WHITE
+    );
+    this.add.circle(
+      GAME_CONFIG.CANVAS_WIDTH - 80,
+      GAME_CONFIG.CANVAS_HEIGHT / 2,
+      3,
+      GAME_CONFIG.COLORS.WHITE
+    );
 
     // Corner arcs
     const cornerRadius = 20;
     this.createCornerArc(0, 0, cornerRadius);
     this.createCornerArc(GAME_CONFIG.CANVAS_WIDTH, 0, cornerRadius);
     this.createCornerArc(0, GAME_CONFIG.CANVAS_HEIGHT, cornerRadius);
-    this.createCornerArc(GAME_CONFIG.CANVAS_WIDTH, GAME_CONFIG.CANVAS_HEIGHT, cornerRadius);
+    this.createCornerArc(
+      GAME_CONFIG.CANVAS_WIDTH,
+      GAME_CONFIG.CANVAS_HEIGHT,
+      cornerRadius
+    );
   }
 
   createCornerArc(x, y, radius) {
@@ -1154,11 +1305,11 @@ export class GameScene extends Phaser.Scene {
   createShootEffect(x, y, playerColor) {
     // Create a more intense particle effect for shooting
     const shootColor = 0xff0066; // Pink/magenta for shooting effect
-    
+
     // Create expanding ring effect
     const ring = this.add.circle(x, y, 20, shootColor, 0.6);
     ring.setDepth(1000);
-    
+
     this.tweens.add({
       targets: ring,
       scaleX: 3,
@@ -1173,7 +1324,12 @@ export class GameScene extends Phaser.Scene {
 
     // Create directional particles in the direction of the shot
     for (let i = 0; i < 8; i++) {
-      const particle = this.add.circle(x, y, Phaser.Math.Between(3, 8), shootColor);
+      const particle = this.add.circle(
+        x,
+        y,
+        Phaser.Math.Between(3, 8),
+        shootColor
+      );
       particle.setAlpha(0.9);
       particle.setDepth(1001);
 

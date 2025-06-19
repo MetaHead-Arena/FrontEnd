@@ -34,20 +34,26 @@ export class Player {
     this.shootPower =
       GAME_CONFIG.PLAYER.BASE_SHOOT_POWER * this.currentAttributes.shootPower;
 
-    // Create rectangular player sprite with correct pixel size
-    this.sprite = scene.physics.add.sprite(x, y, "pixel");
-    this.sprite.setTint(this.attributes.color);
-    this.sprite.setScale(
-      GAME_CONFIG.PLAYER.WIDTH * this.attributes.size, 
-      GAME_CONFIG.PLAYER.HEIGHT * this.attributes.size
-    );
-    this.sprite.setOrigin(0.5, 1); // Bottom center origin
-    this.sprite.refreshBody();
+    // Create player sprite with texture
+    const textureKey = playerKey.toLowerCase(); // 'PLAYER1' -> 'player1'
+    this.sprite = scene.physics.add.sprite(x, y, textureKey);
+    this.sprite.setOrigin(0.5, 1); // Bottom center
 
-    // Physics properties
+    // Scale image to match PLAYER.WIDTH & HEIGHT
+    const targetWidth = GAME_CONFIG.PLAYER.WIDTH * this.attributes.size;
+    const targetHeight = GAME_CONFIG.PLAYER.HEIGHT * this.attributes.size;
+
+    const texture = scene.textures.get(textureKey);
+    const frame = texture.getSourceImage();
+    const scaleX = targetWidth / frame.width;
+    const scaleY = targetHeight / frame.height;
+
+    this.sprite.setScale(scaleX, scaleY);
+
     this.sprite.setBounce(GAME_CONFIG.PLAYER.BOUNCE);
     this.sprite.setCollideWorldBounds(true);
     this.sprite.setDragX(GAME_CONFIG.PLAYER.DRAG_X);
+    this.sprite.refreshBody();
 
     // Movement properties
     this.isOnGround = false;
@@ -66,37 +72,29 @@ export class Player {
   }
 
   setupCollisions() {
-    // Collision with ground
     this.scene.physics.add.collider(this.sprite, this.scene.ground, () => {
       this.isOnGround = true;
     });
 
-    // Collision with walls
     this.scene.physics.add.collider(this.sprite, this.scene.leftWall);
     this.scene.physics.add.collider(this.sprite, this.scene.rightWall);
     this.scene.physics.add.collider(this.sprite, this.scene.topWall);
   }
 
   update() {
-    // Check if player is on ground (for jump mechanics) - improved detection
     const wasOnGround = this.isOnGround;
-    
-    // More reliable ground detection using multiple checks
-    this.isOnGround = (
-      this.sprite.body.touching.down || 
+
+    this.isOnGround =
+      this.sprite.body.touching.down ||
       this.sprite.body.onFloor() ||
-      (this.sprite.body.velocity.y >= 0 && this.sprite.body.touching.down)
-    );
-    
-    // Prevent jump spam by ensuring we're actually on ground
+      (this.sprite.body.velocity.y >= 0 && this.sprite.body.touching.down);
+
     if (this.isOnGround && !wasOnGround) {
-      // Just landed, allow jumping again
+      // Just landed
     }
 
-    // Update power-up indicator position
     this.updatePowerupIndicatorPosition();
 
-    // Handle movement based on control scheme
     if (this.controls === "arrows") {
       this.handleArrowControls();
     } else if (this.controls === "wasd") {
@@ -108,7 +106,6 @@ export class Player {
     const cursors = this.scene.cursors;
     const rightShift = this.scene.rightShift;
 
-    // Horizontal movement with speed attribute and power-ups
     const currentSpeed = this.getCurrentSpeed();
     if (cursors.left.isDown) {
       this.sprite.setVelocityX(-currentSpeed);
@@ -116,13 +113,11 @@ export class Player {
       this.sprite.setVelocityX(currentSpeed);
     }
 
-    // Jump with jump height attribute and power-ups - improved handling
     if (cursors.up.isDown && this.isOnGround) {
       this.sprite.setVelocityY(this.getCurrentJumpVelocity());
       this.isOnGround = false;
     }
 
-    // Shooting control (Right Shift)
     if (rightShift && rightShift.isDown && this.canShoot()) {
       this.shoot();
     }
@@ -132,7 +127,6 @@ export class Player {
     const wasd = this.scene.wasd;
     const space = this.scene.space;
 
-    // Horizontal movement with speed attribute and power-ups
     const currentSpeed = this.getCurrentSpeed();
     if (wasd.A.isDown) {
       this.sprite.setVelocityX(-currentSpeed);
@@ -140,19 +134,16 @@ export class Player {
       this.sprite.setVelocityX(currentSpeed);
     }
 
-    // Jump with jump height attribute and power-ups - improved handling
     if (wasd.W.isDown && this.isOnGround) {
       this.sprite.setVelocityY(this.getCurrentJumpVelocity());
       this.isOnGround = false;
     }
 
-    // Shooting control (Space)
     if (space && space.isDown && this.canShoot()) {
       this.shoot();
     }
   }
 
-  // Update current attributes based on active power-ups
   updateCurrentAttributes() {
     this.currentAttributes.speed =
       this.baseAttributes.speed *
@@ -166,7 +157,7 @@ export class Player {
         ? GAME_CONFIG.POWERUPS.TYPES.JUMP.multiplier
         : 1);
 
-    this.currentAttributes.size = this.baseAttributes.size; // Size doesn't change with power-ups
+    this.currentAttributes.size = this.baseAttributes.size;
 
     this.currentAttributes.kickPower =
       this.baseAttributes.kickPower *
@@ -181,7 +172,6 @@ export class Player {
         : 1);
   }
 
-  // Method to get kick power for ball interactions
   getKickPower() {
     this.updateCurrentAttributes();
     return (
@@ -189,13 +179,11 @@ export class Player {
     );
   }
 
-  // Method to get current speed with power-ups
   getCurrentSpeed() {
     this.updateCurrentAttributes();
     return GAME_CONFIG.PLAYER.BASE_SPEED * this.currentAttributes.speed;
   }
 
-  // Method to get current jump velocity with power-ups
   getCurrentJumpVelocity() {
     this.updateCurrentAttributes();
     return (
@@ -203,7 +191,6 @@ export class Player {
     );
   }
 
-  // Method to get shoot power for ball interactions
   getShootPower() {
     this.updateCurrentAttributes();
     return (
@@ -211,40 +198,35 @@ export class Player {
     );
   }
 
-  // Check if player can shoot (cooldown check)
   canShoot() {
     const currentTime = this.scene.time.now;
-    return currentTime - this.lastShootTime >= GAME_CONFIG.PLAYER.SHOOT_COOLDOWN;
+    return (
+      currentTime - this.lastShootTime >= GAME_CONFIG.PLAYER.SHOOT_COOLDOWN
+    );
   }
 
-  // Method to shoot (called when shoot button is pressed)
   shoot() {
     if (!this.canShoot()) return false;
-    
+
     this.isShooting = true;
     this.lastShootTime = this.scene.time.now;
-    
-    // Reset shooting state after a short delay
+
     this.scene.time.delayedCall(100, () => {
       this.isShooting = false;
     });
-    
+
     return true;
   }
 
-  // Check if player is currently shooting
   isCurrentlyShooting() {
     return this.isShooting;
   }
 
-  // Apply power-up to player
   applyPowerup(type) {
-    // Remove existing power-up of same type if any
     if (this.activePowerups[type]) {
       this.scene.time.removeEvent(this.activePowerups[type].timer);
     }
 
-    // Add new power-up
     this.activePowerups[type] = {
       timer: this.scene.time.delayedCall(GAME_CONFIG.POWERUPS.DURATION, () => {
         this.removePowerup(type);
@@ -253,40 +235,33 @@ export class Player {
 
     this.updatePowerupIndicator();
 
-    // Notify scene to update stats display
     if (this.scene.updatePlayerStatsDisplay) {
       this.scene.updatePlayerStatsDisplay();
     }
   }
 
-  // Remove power-up from player
   removePowerup(type) {
     if (this.activePowerups[type]) {
       this.scene.time.removeEvent(this.activePowerups[type].timer);
       delete this.activePowerups[type];
       this.updatePowerupIndicator();
 
-      // Notify scene to update stats display
       if (this.scene.updatePlayerStatsDisplay) {
         this.scene.updatePlayerStatsDisplay();
       }
     }
   }
 
-  // Update visual power-up indicator
   updatePowerupIndicator() {
-    // Remove existing indicator
     if (this.basePowerupIndicator) {
       this.basePowerupIndicator.destroy();
       this.basePowerupIndicator = null;
     }
 
-    // Create new indicator if player has active power-ups
     const activePowerupTypes = Object.keys(this.activePowerups);
     if (activePowerupTypes.length > 0) {
       const offsetY = -40 * this.attributes.size;
 
-      // Create glowing effect around player
       this.basePowerupIndicator = this.scene.add.circle(
         this.sprite.x,
         this.sprite.y + offsetY,
@@ -296,7 +271,6 @@ export class Player {
       );
       this.basePowerupIndicator.setDepth(500);
 
-      // Add pulsing animation
       this.scene.tweens.add({
         targets: this.basePowerupIndicator,
         alpha: 0.1,
@@ -307,7 +281,6 @@ export class Player {
     }
   }
 
-  // Update power-up indicator position
   updatePowerupIndicatorPosition() {
     if (this.basePowerupIndicator) {
       const offsetY = -40 * this.attributes.size;
@@ -318,16 +291,13 @@ export class Player {
     }
   }
 
-  // Clean up method
   destroy() {
-    // Clean up power-up timers
     Object.values(this.activePowerups).forEach((powerup) => {
       if (powerup.timer) {
         this.scene.time.removeEvent(powerup.timer);
       }
     });
 
-    // Clean up power-up indicator
     if (this.basePowerupIndicator) {
       this.basePowerupIndicator.destroy();
     }
