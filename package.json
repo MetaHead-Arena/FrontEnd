@@ -9,13 +9,20 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@reown/appkit": "^1.7.10",
+    "@reown/appkit-adapter-wagmi": "^1.7.10",
+    "@tanstack/react-query": "^5.80.10",
     "next": "14.0.0",
+    "phaser": "^3.80.0",
     "react": "^18",
     "react-dom": "^18",
-    "phaser": "^3.80.0"
+    "viem": "^2.31.3",
+    "wagmi": "^2.15.6"
   },
   "devDependencies": {
+    "@types/node": "^24.0.3",
+    "@types/react": "19.1.8",
     "eslint": "^8",
     "eslint-config-next": "14.0.0"
   }
-} 
+}
