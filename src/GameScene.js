@@ -33,7 +33,7 @@ export class GameScene extends Phaser.Scene {
 
   init(data) {
     // Set game mode from window object (set by React component)
-    if (typeof window !== 'undefined' && window.__HEADBALL_GAME_MODE) {
+    if (typeof window !== "undefined" && window.__HEADBALL_GAME_MODE) {
       this.gameMode = window.__HEADBALL_GAME_MODE;
     } else if (data && data.gameMode) {
       // Fallback to data parameter if window is not available
@@ -965,8 +965,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   restartGame() {
-    this.scene.stop("GameScene");
-    this.scene.start("MenuScene");
+    // Use the callback function to return to menu
+    if (typeof window !== "undefined" && window.__HEADBALL_RETURN_TO_MENU) {
+      window.__HEADBALL_RETURN_TO_MENU();
+    } else {
+      // Fallback to direct navigation
+      if (typeof window !== "undefined" && window.location) {
+        window.location.href = "/";
+      }
+    }
   }
 
   startGameTimer() {
