@@ -3,7 +3,7 @@
 import { wagmiAdapter, projectId } from '../config'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createAppKit } from '@reown/appkit/react'
-import { mainnet, anvil, scrollSepolia } from '@reown/appkit/networks'
+import { avalancheFuji } from '@reown/appkit/networks'
 import React, { type ReactNode } from 'react'
 import { cookieToInitialState, WagmiProvider, type Config } from 'wagmi'
 
@@ -27,8 +27,8 @@ const metadata = {
  createAppKit({
   adapters: [wagmiAdapter],
   projectId,
-  networks: [mainnet, anvil, scrollSepolia],
-  defaultNetwork: mainnet,
+  networks: [avalancheFuji],
+  defaultNetwork: avalancheFuji,
   metadata: metadata,
   features: {
     analytics: true // Optional - defaults to your Cloud configuration

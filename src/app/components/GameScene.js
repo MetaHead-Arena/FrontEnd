@@ -47,6 +47,7 @@ export class GameScene extends Phaser.Scene {
     this.load.image("player1", "/head-1.png");
     this.load.image("player2", "/head-2.png");
     this.load.image("ball", "/ball.png");
+    this.load.image("stadium", "/assets/images/stadium-background.jpg"); // Add stadium background
   }
 
   resetGameState() {
@@ -69,7 +70,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-    console.log("[GameScene] create called");
+    // console.log("[GameScene] create called");
     // Reset all game state variables
     this.resetGameState();
 
@@ -1314,7 +1315,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  createShootEffect(x, y, playerColor) {
+  createShootEffect(x, y) {
     // Create a more intense particle effect for shooting
     const shootColor = 0xff0066; // Pink/magenta for shooting effect
 
@@ -1371,21 +1372,21 @@ export class GameScene extends Phaser.Scene {
   logToConsole(message, type = "info") {
     if (!GAME_CONFIG.FEEDBACK.CONSOLE_LOGS) return;
 
-    const timestamp = new Date().toLocaleTimeString();
-    const styledMessage = `🎮 [${timestamp}] ${message}`;
+    // const timestamp = new Date().toLocaleTimeString();
+    // const styledMessage = `🎮 [${timestamp}] ${message}`;
 
     switch (type) {
       case "goal":
-        console.log(
-          `%c${styledMessage}`,
-          "color: #00ff00; font-weight: bold; font-size: 14px;"
-        );
+        // console.log(
+        //   `%c${styledMessage}`,
+        //   "color: #00ff00; font-weight: bold; font-size: 14px;"
+        // );
         break;
       case "powerup":
-        console.log(`%c${styledMessage}`, "color: #ffaa00; font-weight: bold;");
+        // console.log(`%c${styledMessage}`, "color: #ffaa00; font-weight: bold;");
         break;
       default:
-        console.log(styledMessage);
+        // console.log(styledMessage);
     }
   }
 

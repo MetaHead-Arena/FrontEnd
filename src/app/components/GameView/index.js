@@ -1,26 +1,19 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import "../../app/globals.css";
-import GameMenu from "../../src/ui/GameMenu";
-import CustomConnectButton from "../../src/ui/CustomConnectButton";
-import { useAccount } from "wagmi";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useCallback } from "react";
+import "../../../app/globals.css";
+import GameMenu from "../../ui/GameMenu";
 // Module-level flag to act as a singleton lock.
 // This will not be reset by React's Strict Mode re-renders.
 let gameInitialized = false;
 
-export default function Home() {
+export default function GameView() {
   const [gameMode, setGameMode] = useState(null); // null, '2player', or 'vsAI'
   const gameContainerRef = useRef(null);
-  const { isConnected } = useAccount();
-  const router = useRouter();
+  // const { isConnected } = useAccount();
+  // const router = useRouter();
 
-  useEffect(() => {
-    if (!isConnected) {
-      router.push("/");
-    }
-  }, [isConnected]);
+  
   // Callback function to return to menu
   const returnToMenu = useCallback(() => {
     setGameMode(null);
@@ -35,8 +28,8 @@ export default function Home() {
   if (gameMode && !gameInitialized && typeof window !== "undefined") {
     gameInitialized = true;
     (async () => {
-      const { GameScene } = await import("../../src/GameScene.js");
-      const { GAME_CONFIG } = await import("../../src/config.js");
+      const { GameScene } = await import("../GameScene.js");
+      const { GAME_CONFIG } = await import("../config.js");
       const config = {
         type: Phaser.AUTO,
         width: GAME_CONFIG.CANVAS_WIDTH,
@@ -65,7 +58,6 @@ export default function Home() {
         height: "100%",
       }}
     >
-      <CustomConnectButton />
 
       {!gameMode && <GameMenu onSelectMode={(mode) => setGameMode(mode)} />}
       <div

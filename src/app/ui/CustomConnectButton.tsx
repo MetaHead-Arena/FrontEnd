@@ -1,10 +1,12 @@
 import React from "react";
 import { useAppKit } from "@reown/appkit/react";
 import { useAccount } from "wagmi";
+import { Button } from "@/shared/Button";
+
 // Custom button component
 const CustomConnectButton: React.FC = () => {
   const { open } = useAppKit();
-  const { address, isConnected } = useAccount();
+  const { isConnected } = useAccount();
 
   const handleConnect = async () => {
     try {
@@ -21,24 +23,20 @@ const CustomConnectButton: React.FC = () => {
   return (
     <div className="flex items-center w-full">
       {isConnected ? (
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium text-gray-700">
-            {address?.slice(0, 6)}...{address?.slice(-4)}
-          </span>
-            <button
-              onClick={handleDisconnect}
-              className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 text-sm"
-            >
-              Disconnect
-            </button>
+        <div>
+          <Button  className="disconnect-button" onClick={handleDisconnect} variant="destructive" size="sm">
+            Disconnect
+          </Button>
         </div>
       ) : (
-        <button
+        <Button
           onClick={handleConnect}
-          className="w-full sm:w-auto text-sm sm:text-base"
+          variant="customBlue"
+          size="sm"
+            className="connect-button"
         >
           Connect Wallet
-        </button>
+        </Button>
       )}
     </div>
   );
