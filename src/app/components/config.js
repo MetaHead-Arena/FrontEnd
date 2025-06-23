@@ -1,8 +1,8 @@
 // Game Configuration and Constants
 export const GAME_CONFIG = {
   // Canvas settings
-  CANVAS_WIDTH: 800,
-  CANVAS_HEIGHT: 600,
+  CANVAS_WIDTH: 1536,
+  CANVAS_HEIGHT: 1024,
 
   // Game timing
   GAME_DURATION: 60, // seconds
@@ -24,8 +24,8 @@ export const GAME_CONFIG = {
     DRAG_X: 800,
     SHOOT_COOLDOWN: 1000,
     STARTING_POSITIONS: {
-      PLAYER1: { x: 200, y: 610 },
-      PLAYER2: { x: 600, y: 610 },
+      PLAYER1: { x: 200, y: 680 },
+      PLAYER2: { x: 1336, y: 680 },
     },
     BG_IMAGES: {
       PLAYER1: "/head-1.png", // Path to Player 1 background image
@@ -104,7 +104,7 @@ export const GAME_CONFIG = {
     DRAG_X: 40,
     DRAG_Y: 8,
     MAX_VELOCITY: 500,
-    STARTING_POSITION: { x: 400, y: 500 },
+    STARTING_POSITION: { x: 768, y: 650 },
     KICK_FORCE: 150,
     KICK_UPWARD_FORCE: -15,
     SEPARATION_FORCE: 20,
