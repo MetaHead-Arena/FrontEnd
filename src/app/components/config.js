@@ -10,12 +10,12 @@ export const GAME_CONFIG = {
   GOAL_PAUSE_DURATION: 1000, // milliseconds
 
   // Physics
-  GRAVITY: 400,
+  GRAVITY: 500,
 
   // Player settings
   PLAYER: {
-    WIDTH: 40,
-    HEIGHT: 60,
+    WIDTH: 120,
+    HEIGHT: 140,
     BASE_SPEED: 180,
     BASE_JUMP_VELOCITY: -300,
     BASE_KICK_POWER: 150,
@@ -33,17 +33,18 @@ export const GAME_CONFIG = {
     },
     ATTRIBUTES: {
       PLAYER1: {
-        speed: 1.0,
-        jumpHeight: 1.0,
+        speed: 2.0,
+        jumpHeight: 1.3,
         size: 1.0,
         kickPower: 1.0,
         shootPower: 1.0,
         name: "Player 1",
         color: 0x1976d2,
+        
       },
       PLAYER2: {
-        speed: 1.0,
-        jumpHeight: 1.0,
+        speed: 2.0,
+        jumpHeight: 1.3,
         size: 1.0,
         kickPower: 1.0,
         shootPower: 1.0,
@@ -99,12 +100,12 @@ export const GAME_CONFIG = {
 
   // Ball settings
   BALL: {
-    SIZE: 30,
+    SIZE: 80,
     BOUNCE: 0.3,
     DRAG_X: 40,
     DRAG_Y: 8,
     MAX_VELOCITY: 500,
-    STARTING_POSITION: { x: 768, y: 650 },
+    STARTING_POSITION: { x: 725, y: 650 },
     KICK_FORCE: 150,
     KICK_UPWARD_FORCE: -15,
     SEPARATION_FORCE: 20,
@@ -114,7 +115,7 @@ export const GAME_CONFIG = {
   FIELD: {
     GROUND_Y: 580,
     GOAL_WIDTH: 100,
-    GOAL_HEIGHT: 120,
+    GOAL_HEIGHT: 125,
     GOAL_AREA_WIDTH: 150,
     GOAL_AREA_HEIGHT: 160,
     CENTER_CIRCLE_RADIUS: 80,

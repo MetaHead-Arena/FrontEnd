@@ -47,7 +47,8 @@ export class GameScene extends Phaser.Scene {
     this.load.image("player1", "/head-1.png");
     this.load.image("player2", "/head-2.png");
     this.load.image("ball", "/ball.png");
-    this.load.image("court", "/court.png");this.load.image("court", "/court.png"); // Load pixel-art stadium background // Load pixel-art stadium background
+    this.load.image("court", "/court.png");
+    this.load.image("court", "/court.png"); // Load pixel-art stadium background // Load pixel-art stadium background
   }
 
   resetGameState() {
@@ -70,10 +71,56 @@ export class GameScene extends Phaser.Scene {
   }
 
   create() {
-       this.add.rectangle(768, 650, 20, 20, 0xff0000); // Ball marker
-   this.add.rectangle(200, 680, 20, 20, 0x00ff00); // Player 1 marker
-   this.add.rectangle(1336, 680, 20, 20, 0x0000ff); // Player 2 marker
-    // console.log("[GameScene] create called");
+    // Set world bounds and gravity
+    this.physics.world.setBounds(
+      0,
+      0,
+      GAME_CONFIG.CANVAS_WIDTH,
+      GAME_CONFIG.CANVAS_HEIGHT
+    );
+    this.physics.world.gravity.y = GAME_CONFIG.GRAVITY;
+
+    // Reset all game state variables
+    this.resetGameState();
+
+    // Draw field background and markings
+    this.add.rectangle(
+      GAME_CONFIG.CANVAS_WIDTH / 2,
+      GAME_CONFIG.CANVAS_HEIGHT / 2,
+      GAME_CONFIG.CANVAS_WIDTH,
+      GAME_CONFIG.CANVAS_HEIGHT,
+      GAME_CONFIG.COLORS.FIELD_GREEN
+    );
+    // Add pixel-art stadium background image
+    this.add.image(0, 0, "court").setOrigin(0, 0).setDisplaySize(1536, 1024);
+
+    // Create field boundaries and goal posts
+    this.createFieldBoundaries();
+    this.createGoalPosts();
+
+    // Setup controls
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.rightShift = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SHIFT_RIGHT
+    );
+    this.wasd = {
+      W: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      A: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      S: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+    };
+    this.space = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SPACE
+    );
+
+    // Create players, ball, UI, and other game components
+    this.createPlayers();
+    this.createBall();
+    this.createUI();
+    this.createPlayerStatsDisplay();
+    this.startGameTimer();
+    this.physics.add.collider(this.player1.sprite, this.player2.sprite);
+
     // Reset all game state variables
     this.resetGameState();
 
@@ -86,21 +133,43 @@ export class GameScene extends Phaser.Scene {
     );
     this.physics.world.gravity.y = GAME_CONFIG.GRAVITY;
 
+    this.add.rectangle(
+      GAME_CONFIG.CANVAS_WIDTH / 2,
+      GAME_CONFIG.CANVAS_HEIGHT / 2,
+      GAME_CONFIG.CANVAS_WIDTH,
+      GAME_CONFIG.CANVAS_HEIGHT,
+      GAME_CONFIG.COLORS.FIELD_GREEN
+    );
+
     // Add pixel-art stadium background image
     this.add.image(0, 0, "court").setOrigin(0, 0).setDisplaySize(1536, 1024);
 
     // Create field boundaries and goal posts
     this.createFieldBoundaries();
-    // this.createGoalPosts();
+    this.createGoalPosts();
 
     // Setup game components
-    this.setupControls();
     this.createPlayers();
     this.createBall();
     this.createUI();
     this.createPlayerStatsDisplay();
     this.startGameTimer();
     this.startPowerupSystem();
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.rightShift = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SHIFT_RIGHT
+    );
+
+    // For WASD controls
+    this.wasd = {
+      W: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      A: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      S: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+    };
+    this.space = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SPACE
+    );
   }
 
   createFieldBoundaries() {
@@ -111,15 +180,11 @@ export class GameScene extends Phaser.Scene {
       .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
       .refreshBody();
 
-      this.ground = this.physics.add.staticGroup();
-      this.ground
-        .create(
-          GAME_CONFIG.CANVAS_WIDTH / 2,
-          820,
-          "pixel"
-        )
-        .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
-        .refreshBody();
+    this.ground = this.physics.add.staticGroup();
+    this.ground
+      .create(GAME_CONFIG.CANVAS_WIDTH / 2, 720, "pixel")
+      .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
+      .refreshBody();
 
     this.leftWall = this.physics.add.staticGroup();
     this.leftWall
@@ -139,7 +204,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   createPlayers() {
-    // Create Player 1 (always human)
     this.player1 = new Player(
       this,
       GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
@@ -234,12 +298,18 @@ export class GameScene extends Phaser.Scene {
 
     // Set physics properties
     this.ball.setBounce(GAME_CONFIG.BALL.BOUNCE);
-    this.ball.setCollideWorldBounds(true);
     this.ball.setDragX(GAME_CONFIG.BALL.DRAG_X);
     this.ball.setDragY(GAME_CONFIG.BALL.DRAG_Y);
     this.ball.setMaxVelocity(
       GAME_CONFIG.BALL.MAX_VELOCITY,
       GAME_CONFIG.BALL.MAX_VELOCITY
+    );
+    this.ball.setCollideWorldBounds(true);
+    this.ball.body.customBoundsRectangle = new Phaser.Geom.Rectangle(
+      0,
+      0,
+      GAME_CONFIG.CANVAS_WIDTH,
+      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y + 20 // Max y position
     );
 
     this.setupBallCollisions();
@@ -293,10 +363,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   kickBall(player, ball) {
-    // Check if player is shooting or just moving normally
+    // Determine if the player is shooting
     const isShooting = player.isCurrentlyShooting();
 
-    // Calculate kick direction and force using player's attributes
+    // Calculate direction from player to ball
     const dx = ball.x - player.sprite.x;
     const dy = ball.y - player.sprite.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -305,6 +375,7 @@ export class GameScene extends Phaser.Scene {
     const dirX = dx / distance;
     const dirY = dy / distance;
 
+    // Calculate player's current speed
     const playerSpeed = Math.sqrt(
       player.sprite.body.velocity.x ** 2 + player.sprite.body.velocity.y ** 2
     );
@@ -312,38 +383,37 @@ export class GameScene extends Phaser.Scene {
     let kickForce, kickX, kickY;
 
     if (isShooting) {
-      // Shooting behavior - more powerful and direct
+      // Shooting: more powerful, less upward force
       kickForce = player.getShootPower() + playerSpeed * 1.5;
       kickX = dirX * kickForce;
-      kickY = dirY * kickForce + GAME_CONFIG.BALL.KICK_UPWARD_FORCE * 0.5; // Less upward force for shooting
+      kickY = dirY * kickForce + GAME_CONFIG.BALL.KICK_UPWARD_FORCE * 0.5;
 
-      // Add shooting visual effect
+      // Visual effect for shooting
       this.createShootEffect(
         player.sprite.x,
         player.sprite.y,
         player.attributes.color
       );
-
-      // Log shooting action
-      this.logToConsole(`${player.attributes.name} shoots! 💥`, "powerup");
     } else {
-      // Normal kicking behavior
+      // Normal kick: less powerful, more upward force
       kickForce = player.getKickPower() + playerSpeed * 2;
       kickX = dirX * kickForce;
       kickY = dirY * kickForce + GAME_CONFIG.BALL.KICK_UPWARD_FORCE;
     }
 
+    // Apply velocity to the ball
     ball.body.setVelocity(
       ball.body.velocity.x + kickX,
       ball.body.velocity.y + kickY
     );
+
+    // Slightly separate the ball from the player to avoid sticking
     ball.x += dirX * GAME_CONFIG.BALL.SEPARATION_FORCE;
     ball.y += dirY * GAME_CONFIG.BALL.SEPARATION_FORCE;
   }
 
   handleGoal(scoringPlayer) {
-    if (this.gameOver || this.pausedForGoal) return;
-
+    if (this.gameOver || this.pausedForGoal || this.goalCooldown > 0) return;
     // Update score
     if (scoringPlayer === "player1") {
       this.player1Score++;
@@ -354,22 +424,6 @@ export class GameScene extends Phaser.Scene {
     // Enhanced goal effects
     this.updateScoreDisplay();
     this.showEnhancedGoalEffect();
-
-    // Console logging
-    const goalMessage =
-      GAME_CONFIG.FEEDBACK.GOAL_MESSAGES[
-        Math.floor(Math.random() * GAME_CONFIG.FEEDBACK.GOAL_MESSAGES.length)
-      ];
-    const scoringPlayerName =
-      scoringPlayer === "player1"
-        ? "Player 1"
-        : this.gameMode === "vsAI"
-        ? "AI"
-        : "Player 2";
-    this.logToConsole(
-      `${goalMessage} ${scoringPlayerName} scores! Score: ${this.player1Score}-${this.player2Score}`,
-      "goal"
-    );
 
     this.goalCooldown = GAME_CONFIG.GOAL_COOLDOWN;
     this.pausedForGoal = true;
@@ -382,6 +436,9 @@ export class GameScene extends Phaser.Scene {
 
   handleGameEnd() {
     this.gameOver = true;
+
+
+    // Stop the timer and powerup systems
     if (this.timerEvent) this.timerEvent.destroy();
     if (this.powerupSpawnTimer) this.powerupSpawnTimer.destroy();
 
@@ -443,19 +500,14 @@ export class GameScene extends Phaser.Scene {
     this.winText.setVisible(true);
     this.restartButton.setVisible(true);
 
-    // Console log final result
-    this.logToConsole(
-      `🏁 Game Over! ${resultMessage} Final Score: ${this.player1Score}-${this.player2Score}`,
-      "goal"
-    );
-
+    // Stop all movement
     this.ball.body.setVelocity(0, 0);
     this.player1.sprite.body.setVelocity(0, 0);
     this.player2.sprite.body.setVelocity(0, 0);
   }
 
   createUI() {
-    // Move scoreboard and timer to top center
+    // Timer display (top center)
     this.timerText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
@@ -474,6 +526,7 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5)
       .setDepth(3000);
 
+    // Scoreboard (top center, below timer)
     this.scoreText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
@@ -494,7 +547,7 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5)
       .setDepth(3000);
 
-    // Goal effect text
+    // Goal effect text (centered, hidden by default)
     this.goalEffectText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
@@ -513,7 +566,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(4000)
       .setVisible(false);
 
-    // Win message
+    // Win message (centered, hidden by default)
     this.winText = this.add
       .text(GAME_CONFIG.CANVAS_WIDTH / 2, 300, "", {
         fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
@@ -527,7 +580,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(4000)
       .setVisible(false);
 
-    // Restart button
+    // Restart button (centered, hidden by default)
     this.restartButton = this.add
       .text(GAME_CONFIG.CANVAS_WIDTH / 2, 400, "Press R to Return to Menu", {
         fontSize: GAME_CONFIG.UI.FONT_SIZES.RESTART_BUTTON,
@@ -542,6 +595,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(4000)
       .setVisible(false);
 
+    // Restart key
     this.restartKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.R
     );
@@ -561,7 +615,7 @@ export class GameScene extends Phaser.Scene {
 
     this.powerupSpawnTimer = this.time.delayedCall(delay, () => {
       this.spawnPowerup();
-      this.schedulePowerupSpawn(); // Schedule next spawn
+      this.schedulePowerupSpawn();
     });
   }
 
@@ -599,20 +653,20 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.existing(powerup);
     powerup.body.setCircle(GAME_CONFIG.POWERUPS.SIZE);
     powerup.body.setImmovable(true);
-    powerup.body.setGravityY(-GAME_CONFIG.GRAVITY); // Cancel out world gravity
-    powerup.body.setVelocity(0, 0); // Make sure it's completely still
+    powerup.body.setGravityY(-GAME_CONFIG.GRAVITY);
+    powerup.body.setVelocity(0, 0);
 
-    // Add gentle floating animation
+    // Floating animation
     this.tweens.add({
       targets: [powerup, icon],
-      y: y - 5, // Very small movement
+      y: y - 5,
       duration: 1500,
       yoyo: true,
       repeat: -1,
       ease: "Sine.easeInOut",
     });
 
-    // Add glowing effect
+    // Glowing effect
     this.tweens.add({
       targets: powerup,
       alpha: 0.7,
@@ -633,12 +687,12 @@ export class GameScene extends Phaser.Scene {
 
     this.powerups.push(powerupData);
 
-    // Set up collision with ball
+    // Collision with ball
     this.physics.add.overlap(this.ball, powerup, () => {
       this.collectPowerup(powerupData);
     });
 
-    // Auto-remove power-up after lifetime expires
+    // Auto-remove after lifetime
     powerupData.lifetimeTimer = this.time.delayedCall(
       GAME_CONFIG.POWERUPS.LIFETIME,
       () => {
@@ -648,7 +702,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   collectPowerup(powerupData) {
-    if (powerupData.collected) return; // Prevent double collection
+    if (powerupData.collected) return;
 
     // Particle effect at collection point
     this.createParticleEffect(
@@ -662,24 +716,10 @@ export class GameScene extends Phaser.Scene {
     if (this.lastPlayerToTouchBall) {
       this.lastPlayerToTouchBall.applyPowerup(powerupData.type);
 
-      // Show power-up notification
+      // Show notification
       this.showPowerupNotification(
         powerupData.config.name,
         this.lastPlayerToTouchBall
-      );
-
-      // Console logging
-      const powerupMessage =
-        GAME_CONFIG.FEEDBACK.POWERUP_MESSAGES[
-          Math.floor(
-            Math.random() * GAME_CONFIG.FEEDBACK.POWERUP_MESSAGES.length
-          )
-        ];
-      const playerName =
-        this.lastPlayerToTouchBall === this.player1 ? "Player 1" : "Player 2";
-      this.logToConsole(
-        `${powerupMessage} ${playerName} collected ${powerupData.config.name}!`,
-        "powerup"
       );
     }
 
@@ -687,22 +727,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   removePowerup(powerupData) {
-    if (powerupData.collected) return; // Already removed
+    if (powerupData.collected) return;
     powerupData.collected = true;
 
-    // Cancel the lifetime timer if it exists
+    // Cancel timer
     if (powerupData.lifetimeTimer) {
       powerupData.lifetimeTimer.destroy();
       powerupData.lifetimeTimer = null;
     }
 
-    // Remove from array first
+    // Remove from array
     const index = this.powerups.indexOf(powerupData);
     if (index > -1) {
       this.powerups.splice(index, 1);
     }
 
-    // Immediately destroy sprites
+    // Destroy sprites
     if (powerupData.sprite && powerupData.sprite.active) {
       powerupData.sprite.destroy();
     }
@@ -742,7 +782,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   createPlayerStatsDisplay() {
-    // Player 1 stats (left side, below controls)
+    // Player 1 stats (left)
     this.add.text(20, 130, "🔵 Player 1", {
       fontSize: "16px",
       fill: "#1976d2",
@@ -764,7 +804,7 @@ export class GameScene extends Phaser.Scene {
       }
     );
 
-    // Player 2/AI stats (right side, below controls)
+    // Player 2/AI stats (right)
     const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
     const player2Color = this.gameMode === "vsAI" ? "#ff6600" : "#d32f2f";
     const player2BgColor = this.gameMode === "vsAI" ? "#331100" : "#220011";
@@ -778,6 +818,7 @@ export class GameScene extends Phaser.Scene {
         strokeThickness: 1,
       })
       .setOrigin(1, 0);
+
     this.player2StatsText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH - 20,
@@ -812,7 +853,374 @@ export class GameScene extends Phaser.Scene {
     p1Text += " | ";
     p1Text += `📏SIZ: ${p1Current.size.toFixed(1)}`;
     p1Text += " | ";
-    p1Text += this.player1.activePowerups.KICK
-    ? `⚽KCK: ${p1Current.kickPower.toFixed(1)}✨`
-    : "";
-  }}
+    p1Text += this.player1.activePowerups.KICKAdd
+      ? `⚽KCK: ${p1Current.kickPower.toFixed(1)}✨`
+      : `⚽KCK: ${p1Current.kickPower.toFixed(1)}`;
+
+    p1Text += " | ";
+
+    p1Text += this.player1.activePowerups.SHOOT
+      ? `🎯SHT: ${p1Current.shootPower.toFixed(1)}✨`
+      : `🎯SHT: ${p1Current.shootPower.toFixed(1)}`;
+
+    this.player1StatsText.setText(p1Text);
+
+    // Update Player 2 stats with enhanced formatting
+
+    this.player2.updateCurrentAttributes();
+
+    const p2Current = this.player2.currentAttributes;
+
+    let p2Text = "";
+
+    p2Text += this.player2.activePowerups.SPEED
+      ? `⚡SPD: ${p2Current.speed.toFixed(1)}✨`
+      : `⚡SPD: ${p2Current.speed.toFixed(1)}`;
+
+    p2Text += " | ";
+
+    p2Text += this.player2.activePowerups.JUMP
+      ? `🦘JMP: ${p2Current.jumpHeight.toFixed(1)}✨`
+      : `🦘JMP: ${p2Current.jumpHeight.toFixed(1)}`;
+
+    p2Text += " | ";
+
+    p2Text += `📏SIZ: ${p2Current.size.toFixed(1)}`;
+
+    p2Text += " | ";
+
+    p2Text += this.player2.activePowerups.KICK
+      ? `⚽KCK: ${p2Current.kickPower.toFixed(1)}✨`
+      : `⚽KCK: ${p2Current.kickPower.toFixed(1)}`;
+
+    p2Text += " | ";
+
+    p2Text += this.player2.activePowerups.SHOOT
+      ? `🎯SHT: ${p2Current.shootPower.toFixed(1)}✨`
+      : `🎯SHT: ${p2Current.shootPower.toFixed(1)}`;
+
+    this.player2StatsText.setText(p2Text);
+  }
+
+  updateScoreDisplay() {
+    const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
+
+    const scoreString = `🔵 Player 1: ${this.player1Score}  -  ${player2Name}: ${this.player2Score} 🔴`;
+
+    this.scoreText.setText(scoreString);
+
+    // Add subtle glow effect to score
+
+    this.scoreText.setStyle({
+      fontSize: GAME_CONFIG.UI.FONT_SIZES.SCORE,
+
+      fill: "#ffffff",
+
+      backgroundColor: "#1976d2",
+
+      padding: { x: 18, y: 8 },
+
+      align: "center",
+
+      stroke: "#000",
+
+      strokeThickness: 3,
+    });
+  }
+
+  showEnhancedGoalEffect() {
+    // Enhanced GOAL text animation
+    this.goalEffectText.setVisible(true);
+    this.goalEffectText.setScale(0.1);
+    this.goalEffectText.setAlpha(1);
+
+    this.tweens.add({
+      targets: this.goalEffectText,
+      scaleX: 1.5,
+      scaleY: 1.5,
+      duration: 300,
+      ease: "Back.easeOut",
+      onComplete: () => {
+        this.tweens.add({
+          targets: this.goalEffectText,
+          scaleX: 1.0,
+          scaleY: 1.0,
+          alpha: 0,
+          duration: 700,
+          ease: "Power2",
+          onComplete: () => {
+            this.goalEffectText.setVisible(false);
+          },
+        });
+      },
+    });
+
+    // Enhanced flash effect
+    const flashRect = this.add.rectangle(
+      GAME_CONFIG.CANVAS_WIDTH / 2,
+      GAME_CONFIG.CANVAS_HEIGHT / 2,
+      GAME_CONFIG.CANVAS_WIDTH,
+      GAME_CONFIG.CANVAS_HEIGHT,
+      GAME_CONFIG.EFFECTS.GOAL_FLASH.COLOR,
+      GAME_CONFIG.EFFECTS.GOAL_FLASH.ALPHA
+    );
+    flashRect.setDepth(1500);
+
+    this.tweens.add({
+      targets: flashRect,
+      alpha: 0,
+      duration: GAME_CONFIG.EFFECTS.GOAL_FLASH.DURATION,
+      ease: "Power2",
+      onComplete: () => {
+        flashRect.destroy();
+      },
+    });
+
+    // Particle explosion at goal
+    const goalX = this.ball.x;
+    const goalY = this.ball.y;
+    this.createParticleEffect(goalX, goalY, GAME_CONFIG.COLORS.YELLOW, 20);
+  }
+
+  resetAfterGoal() {
+    this.ball.setPosition(
+      GAME_CONFIG.BALL.STARTING_POSITION.x,
+      GAME_CONFIG.BALL.STARTING_POSITION.y
+    );
+    this.ball.body.setVelocity(0, 0);
+
+    this.player1.sprite.setPosition(
+      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
+      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y
+    );
+    this.player1.sprite.body.setVelocity(0, 0);
+
+    this.player2.sprite.setPosition(
+      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
+      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y
+    );
+    this.player2.sprite.body.setVelocity(0, 0);
+
+    this.pausedForGoal = false;
+    this.goalCooldown = 0;
+  }
+
+  resetBall() {
+    this.ball.setPosition(
+      GAME_CONFIG.BALL.STARTING_POSITION.x,
+      GAME_CONFIG.BALL.STARTING_POSITION.y
+    );
+    this.ball.body.setVelocity(0, 0);
+  }
+
+  checkBallBounds() {
+    if (
+      this.ball.y > GAME_CONFIG.CANVAS_HEIGHT + 50 ||
+      this.ball.x < -50 ||
+      this.ball.x > GAME_CONFIG.CANVAS_WIDTH + 50
+    ) {
+      this.resetBall();
+    }
+  }
+
+  restartGame() {
+    // Use the callback function to return to menu
+    if (typeof window !== "undefined" && window.__HEADBALL_RETURN_TO_MENU) {
+      window.__HEADBALL_RETURN_TO_MENU();
+    } else if (typeof window !== "undefined" && window.location) {
+      // Fallback to direct navigation
+      window.location.href = "/";
+    }
+  }
+
+  startGameTimer() {
+    this.gameTime = GAME_CONFIG.GAME_DURATION;
+    this.gameStarted = true;
+    this.updateTimerDisplay();
+
+    this.timerEvent = this.time.addEvent({
+      delay: 1000,
+      callback: this.updateTimer,
+      callbackScope: this,
+      loop: true,
+    });
+  }
+
+  updateTimer() {
+    if (this.gameOver || this.pausedForGoal) return;
+
+    this.gameTime--;
+    this.updateTimerDisplay();
+
+    if (this.gameTime <= 0) {
+      this.handleGameEnd();
+      return;
+    }
+
+    if (this.gameTime <= GAME_CONFIG.TIMER_THRESHOLDS.CRITICAL) {
+      this.timerText.setStyle({ fill: "#ff0000" });
+    } else if (this.gameTime <= GAME_CONFIG.TIMER_THRESHOLDS.WARNING) {
+      this.timerText.setStyle({ fill: "#ffff00" });
+    } else {
+      this.timerText.setStyle({ fill: "#ffffff" });
+    }
+  }
+
+  updateTimerDisplay() {
+    const minutes = Math.floor(this.gameTime / 60);
+    const seconds = this.gameTime % 60;
+    const timeString = `⏱️ ${minutes.toString().padStart(2, "0")}:${seconds
+      .toString()
+      .padStart(2, "0")}`;
+
+    // Determine timer color and background based on time left
+    let timerColor = "#ffffff";
+    let backgroundColor = "#222222";
+    if (this.gameTime <= 10) {
+      timerColor = "#ff0000";
+      backgroundColor = "#330000";
+      // Pulse effect for last 10 seconds
+      this.tweens.add({
+        targets: this.timerText,
+        scaleX: 1.1,
+        scaleY: 1.1,
+        duration: 500,
+        yoyo: true,
+        ease: "Power2",
+      });
+    } else if (this.gameTime <= 30) {
+      timerColor = "#ffaa00";
+      backgroundColor = "#332200";
+    }
+
+    this.timerText.setStyle({
+      fontSize: GAME_CONFIG.UI.FONT_SIZES.TIMER,
+      fill: timerColor,
+      backgroundColor,
+      padding: { x: 16, y: 8 },
+      align: "center",
+    });
+
+    this.timerText.setText(timeString);
+  }
+
+  setupControls() {
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd = this.input.keyboard.addKeys("W,S,A,D");
+    this.rightShift = this.input.keyboard.addKey("SHIFT");
+    this.space = this.input.keyboard.addKey("SPACE");
+  }
+
+  createGoalPosts() {
+    const goalY = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y - 80;
+    const crossbarY = goalY - GAME_CONFIG.FIELD.GOAL_HEIGHT / 2;
+
+    // Physical crossbars to block ball from entering from above
+    this.leftCrossbar = this.physics.add.staticGroup();
+    this.leftCrossbar
+      .create(75, crossbarY, "pixel")
+      .setScale(50, 8)
+      .refreshBody();
+
+    this.rightCrossbar = this.physics.add.staticGroup();
+    this.rightCrossbar
+      .create(GAME_CONFIG.CANVAS_WIDTH - 75, crossbarY, "pixel")
+      .setScale(50, 8)
+      .refreshBody();
+
+    // Goal zones for collision detection (at the goal mouth)
+    this.leftGoalZone = this.physics.add.staticGroup();
+    this.leftGoalZone
+      .create(75, goalY + 10, "pixel")
+      .setScale(40, GAME_CONFIG.FIELD.GOAL_HEIGHT - 10)
+      .refreshBody();
+
+    this.rightGoalZone = this.physics.add.staticGroup();
+    this.rightGoalZone
+      .create(GAME_CONFIG.CANVAS_WIDTH - 75, goalY + 10, "pixel")
+      .setScale(40, GAME_CONFIG.FIELD.GOAL_HEIGHT - 10)
+      .refreshBody();
+  }
+
+  createParticleEffect(x, y, color, count = 10) {
+    for (let i = 0; i < count; i++) {
+      const size = Phaser.Math.Between(2, 6);
+      const particle = this.add.circle(x, y, size, color, 0.8);
+      particle.setDepth(1000);
+
+      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      const speed = Phaser.Math.Between(50, 150);
+      const velocityX = Math.cos(angle) * speed;
+      const velocityY = Math.sin(angle) * speed;
+
+      this.tweens.add({
+        targets: particle,
+        x: x + velocityX,
+        y: y + velocityY,
+        alpha: 0,
+        scale: 0,
+        duration: 800,
+        ease: "Power2",
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
+  createShootEffect(x, y, color = 0xff0066) {
+    // Create an expanding ring effect
+    const ring = this.add.circle(x, y, 20, color, 0.6).setDepth(1000);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 3,
+      scaleY: 3,
+      alpha: 0,
+      duration: 300,
+      ease: "Power2",
+      onComplete: () => ring.destroy(),
+    });
+
+    // Create directional particles
+    for (let i = 0; i < 8; i++) {
+      const particle = this.add
+        .circle(x, y, Phaser.Math.Between(3, 8), color)
+        .setAlpha(0.9)
+        .setDepth(1001);
+
+      const angle = (Math.PI * 2 * i) / 8;
+      const speed = Phaser.Math.Between(100, 200);
+      const velocityX = Math.cos(angle) * speed;
+      const velocityY = Math.sin(angle) * speed;
+
+      this.tweens.add({
+        targets: particle,
+        x: x + velocityX,
+        y: y + velocityY,
+        alpha: 0,
+        scale: 0,
+        duration: 400,
+        ease: "Power2",
+        onComplete: () => particle.destroy(),
+      });
+    }
+
+    // Screen shake effect
+    this.cameras.main.shake(100, 0.02);
+  }
+
+  update() {
+    this.player1.update();
+    this.player2.update();
+    if (this.goalCooldown > 0) this.goalCooldown--;
+    if (this.gameOver && this.restartKey.isDown) {
+      this.restartGame();
+    }
+    if (this.gameOver || this.pausedForGoal) return;
+    if (this.player1) this.player1.update();
+    if (this.player2) this.player2.update();
+    if (this.ball) {
+      this.checkBallBounds();
+    }
+    // Update player stats display to show power-up effects
+    this.updatePlayerStatsDisplay();
+  }
+}
