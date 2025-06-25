@@ -13,7 +13,7 @@ import CustomConnectButton from "./CustomConnectButton";
 
 const GameBackGround = "/GameBackGround.png";
 
-const GameMenu = ({ onSelectMode }) => {
+const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const { address, isConnected } = useAccount();
   const [selectedPlayer, setSelectedPlayer] = useState(1);
   const [showChestModal, setShowChestModal] = useState(false);
@@ -159,7 +159,10 @@ const GameMenu = ({ onSelectMode }) => {
             1 VS AI
           </PixelButton>
         </div>
-        <PixelButton className="w-full h-[60px] text-[2rem] flex items-center justify-center">
+        <PixelButton
+          className="w-full h-[60px] text-[2rem] flex items-center justify-center"
+          onClick={onMarketplace}
+        >
           MARKETPLACE
         </PixelButton>
       </div>
