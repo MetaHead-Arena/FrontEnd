@@ -4,7 +4,6 @@ import { useState, useRef, useCallback } from "react";
 import "../../../app/globals.css";
 import GameMenu from "../../ui/GameMenu";
 import Marketplace from "../../ui/Marketplace";
-import { GAME_CONFIG } from "../config.js";
 // Module-level flag to act as a singleton lock.
 // This will not be reset by React's Strict Mode re-renders.
 let gameInitialized = false;
@@ -32,7 +31,6 @@ export default function GameView() {
     gameInitialized = true;
     (async () => {
       const { GameScene } = await import("../GameScene.js");
-      const { GAME_CONFIG } = await import("../config.js");
       const config = {
         type: Phaser.AUTO,
         width: 1536,
