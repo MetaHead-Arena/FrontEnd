@@ -2,7 +2,7 @@ import ContextProvider from "../../context"
 import Script from "next/script"
 
 export const metadata = {
-  title: 'Head Ball Game',
+  title: 'MetaHead Arena',
   description: 'A fun football game built with Phaser and Next.js',
 }
 
