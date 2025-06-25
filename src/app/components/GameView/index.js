@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import "../../../app/globals.css";
 import GameMenu from "../../ui/GameMenu";
+import Marketplace from "../../ui/Marketplace";
 import { GAME_CONFIG } from "../config.js";
 // Module-level flag to act as a singleton lock.
 // This will not be reset by React's Strict Mode re-renders.
@@ -10,14 +11,15 @@ let gameInitialized = false;
 
 export default function GameView() {
   const [gameMode, setGameMode] = useState(null); // null, '2player', or 'vsAI'
+  const [marketplaceMode, setMarketplaceMode] = useState(false);
   const gameContainerRef = useRef(null);
   // const { isConnected } = useAccount();
   // const router = useRouter();
 
-  
   // Callback function to return to menu
   const returnToMenu = useCallback(() => {
     setGameMode(null);
+    setMarketplaceMode(false);
     gameInitialized = false;
     // Clean up the game instance
     if (typeof window !== "undefined" && window.__HEADBALL_GAME) {
@@ -44,7 +46,9 @@ export default function GameView() {
         scene: [GameScene],
         scale: {
           mode: window.Phaser ? window.Phaser.Scale.FIT : undefined,
-          autoCenter: window.Phaser ? window.Phaser.Scale.CENTER_BOTH : undefined,
+          autoCenter: window.Phaser
+            ? window.Phaser.Scale.CENTER_BOTH
+            : undefined,
           width: 1536,
           height: 1024,
         },
@@ -72,9 +76,20 @@ export default function GameView() {
         />
       )}
       <div
-        style={{ width: "100%", height: "100%", position: "relative", zIndex: 1 }}
+        style={{
+          width: "100%",
+          height: "100%",
+          position: "relative",
+          zIndex: 1,
+        }}
       >
-        {!gameMode && <GameMenu onSelectMode={(mode) => setGameMode(mode)} />}
+        {!gameMode && !marketplaceMode && (
+          <GameMenu
+            onSelectMode={(mode) => setGameMode(mode)}
+            onMarketplace={() => setMarketplaceMode(true)}
+          />
+        )}
+        {marketplaceMode && <Marketplace onBack={returnToMenu} />}
         {gameMode && (
           <div
             id="game-container"
