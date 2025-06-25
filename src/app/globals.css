@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -23,4 +24,221 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+.pixelated-font {
+  font-family: "Press Start 2P", monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-shadow: 4px 4px 0px #222;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.metahead-title {
+  text-align: center;
+  margin-bottom: 32px;
+  pointer-events: none;
+}
+
+.metahead-main {
+  font-family: "Press Start 2P", monospace;
+  font-size: 64px;
+  color: #fff;
+  text-shadow: 6px 6px 0 #222;
+  letter-spacing: 2px;
+  line-height: 1.1;
+}
+
+/* Enhanced pixel-perfect borders with detailed corners */
+.pixel-border {
+  border-width: 4px;
+  border-style: solid;
+  position: relative;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.pixel-border::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(
+      90deg,
+      transparent 2px,
+      #facc15 2px,
+      #facc15 4px,
+      transparent 4px
+    ),
+    linear-gradient(
+      0deg,
+      transparent 2px,
+      #facc15 2px,
+      #facc15 4px,
+      transparent 4px
+    );
+  background-size: 8px 8px, 8px 8px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Enhanced button pixel styling with better corners */
+.pixel-button {
+  position: relative;
+  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+  border: none;
+  box-shadow: 0 0 0 2px #facc15, 0 0 0 4px #d97706, 4px 4px 0px #222,
+    inset 2px 2px 0px rgba(255, 255, 255, 0.2),
+    inset -2px -2px 0px rgba(0, 0, 0, 0.3);
+  transition: all 0.1s ease;
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.pixel-button::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  background: conic-gradient(
+      from 0deg at 4px 4px,
+      #facc15 0deg 90deg,
+      transparent 90deg 180deg,
+      transparent 180deg 270deg,
+      #facc15 270deg 360deg
+    ),
+    conic-gradient(
+      from 0deg at calc(100% - 4px) 4px,
+      transparent 0deg 90deg,
+      #facc15 90deg 180deg,
+      transparent 180deg 270deg,
+      transparent 270deg 360deg
+    ),
+    conic-gradient(
+      from 0deg at 4px calc(100% - 4px),
+      transparent 0deg 90deg,
+      transparent 90deg 180deg,
+      #facc15 180deg 270deg,
+      transparent 270deg 360deg
+    ),
+    conic-gradient(
+      from 0deg at calc(100% - 4px) calc(100% - 4px),
+      transparent 0deg 90deg,
+      transparent 90deg 180deg,
+      transparent 180deg 270deg,
+      #facc15 270deg 360deg
+    );
+  background-size: 8px 8px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Enhanced card pixel styling with detailed corners */
+.pixel-card {
+  background: linear-gradient(135deg, #1e40af 0%, #1e3a8a 100%);
+  border: none;
+  position: relative;
+  box-shadow: 0 0 0 2px #facc15, 0 0 0 4px #d97706, 6px 6px 0px #222,
+    inset 2px 2px 0px rgba(255, 255, 255, 0.1),
+    inset -2px -2px 0px rgba(0, 0, 0, 0.2);
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+.pixel-card::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  background-image: 
+    /* Top-left corner */ radial-gradient(
+      circle at 0% 0%,
+      transparent 0px,
+      transparent 2px,
+      #facc15 2px,
+      #facc15 4px,
+      transparent 4px
+    ),
+    /* Top-right corner */
+      radial-gradient(
+        circle at 100% 0%,
+        transparent 0px,
+        transparent 2px,
+        #facc15 2px,
+        #facc15 4px,
+        transparent 4px
+      ),
+    /* Bottom-left corner */
+      radial-gradient(
+        circle at 0% 100%,
+        transparent 0px,
+        transparent 2px,
+        #facc15 2px,
+        #facc15 4px,
+        transparent 4px
+      ),
+    /* Bottom-right corner */
+      radial-gradient(
+        circle at 100% 100%,
+        transparent 0px,
+        transparent 2px,
+        #facc15 2px,
+        #facc15 4px,
+        transparent 4px
+      ),
+    /* Border lines */ linear-gradient(90deg, #facc15 0%, #facc15 100%),
+    linear-gradient(0deg, #facc15 0%, #facc15 100%);
+  background-size: 8px 8px, 8px 8px, 8px 8px, 8px 8px, 100% 4px, 4px 100%;
+  background-position: 0 0, 100% 0, 0 100%, 100% 100%, 0 0, 0 0;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Additional retro styling */
+button,
+.pixel-card,
+.pixel-border {
+  image-rendering: pixelated;
+  image-rendering: -moz-crisp-edges;
+  image-rendering: crisp-edges;
+}
+
+/* Pixel corner enhancement for specific elements */
+.pixel-corner-enhanced {
+  position: relative;
+}
+
+.pixel-corner-enhanced::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: 
+    /* Corner pixels */ linear-gradient(
+      45deg,
+      #facc15 25%,
+      transparent 25%
+    ),
+    linear-gradient(-45deg, #facc15 25%, transparent 25%),
+    linear-gradient(135deg, #facc15 25%, transparent 25%),
+    linear-gradient(-135deg, #facc15 25%, transparent 25%);
+  background-size: 4px 4px;
+  background-position: 0 0, 100% 0, 0 100%, 100% 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  z-index: 1;
 }
