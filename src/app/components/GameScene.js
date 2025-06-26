@@ -47,7 +47,6 @@ export class GameScene extends Phaser.Scene {
     this.load.image("player1", "/head-1.png");
     this.load.image("player2", "/head-2.png");
     this.load.image("ball", "/ball.png");
-    this.load.image("court", "/court.png");
     this.load.image("court", "/court.png"); // Load pixel-art stadium background // Load pixel-art stadium background
   }
 
@@ -83,14 +82,14 @@ export class GameScene extends Phaser.Scene {
     // Reset all game state variables
     this.resetGameState();
 
-    // Draw field background and markings
-    this.add.rectangle(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.CANVAS_HEIGHT / 2,
-      GAME_CONFIG.CANVAS_WIDTH,
-      GAME_CONFIG.CANVAS_HEIGHT,
-      GAME_CONFIG.COLORS.FIELD_GREEN
-    );
+    // // Draw field background and markings
+    // this.add.rectangle(
+    //   GAME_CONFIG.CANVAS_WIDTH / 2,
+    //   GAME_CONFIG.CANVAS_HEIGHT / 2,
+    //   GAME_CONFIG.CANVAS_WIDTH,
+    //   GAME_CONFIG.CANVAS_HEIGHT,
+    //   GAME_CONFIG.COLORS.FIELD_GREEN
+    // );
     // Add pixel-art stadium background image
     this.add.image(0, 0, "court").setOrigin(0, 0).setDisplaySize(1536, 1024);
 
@@ -174,33 +173,33 @@ export class GameScene extends Phaser.Scene {
 
   createFieldBoundaries() {
     // Create invisible walls for physics
-    this.topWall = this.physics.add.staticGroup();
-    this.topWall
-      .create(GAME_CONFIG.CANVAS_WIDTH / 2, -10, "pixel")
-      .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
-      .refreshBody();
+    // this.topWall = this.physics.add.staticGroup();
+    // this.topWall
+    //   .create(GAME_CONFIG.CANVAS_WIDTH / 2, -10, "pixel")
+    //   .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
+    //   .refreshBody();
 
     this.ground = this.physics.add.staticGroup();
     this.ground
-      .create(GAME_CONFIG.CANVAS_WIDTH / 2, 720, "pixel")
+      .create(GAME_CONFIG.CANVAS_WIDTH / 2, GAME_CONFIG.FIELD.GROUND_Y, "pixel")
       .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
       .refreshBody();
 
-    this.leftWall = this.physics.add.staticGroup();
-    this.leftWall
-      .create(-10, GAME_CONFIG.CANVAS_HEIGHT / 2, "pixel")
-      .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
-      .refreshBody();
+    // this.leftWall = this.physics.add.staticGroup();
+    // this.leftWall
+    //   .create(-10, GAME_CONFIG.CANVAS_HEIGHT / 2, "pixel")
+    //   .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
+    //   .refreshBody();
 
-    this.rightWall = this.physics.add.staticGroup();
-    this.rightWall
-      .create(
-        GAME_CONFIG.CANVAS_WIDTH + 10,
-        GAME_CONFIG.CANVAS_HEIGHT / 2,
-        "pixel"
-      )
-      .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
-      .refreshBody();
+    // this.rightWall = this.physics.add.staticGroup();
+    // this.rightWall
+    //   .create(
+    //     GAME_CONFIG.CANVAS_WIDTH + 10,
+    //     GAME_CONFIG.CANVAS_HEIGHT / 2,
+    //     "pixel"
+    //   )
+    //   .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
+    //   .refreshBody();
   }
 
   createPlayers() {
@@ -253,6 +252,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.UI.CONTROLS_Y,
         controlText,
         {
+          fontFamily: '"Press Start 2P"',
           fontSize: GAME_CONFIG.UI.FONT_SIZES.CONTROLS,
           fill: "#ffffff",
           backgroundColor: "#000000",
@@ -266,10 +266,11 @@ export class GameScene extends Phaser.Scene {
     this.powerupBarText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.UI.POWERUP_BAR_Y,
+        940,
         "🌟 Power-ups will appear on the field - touch them with the ball! 🌟",
         {
-          fontSize: GAME_CONFIG.UI.FONT_SIZES.POWERUP_BAR,
+          fontFamily: '"Press Start 2P"',
+          fontSize: "10px",
           fill: "#ffff00",
           backgroundColor: "#333333",
           padding: { x: 8, y: 4 },
@@ -437,7 +438,6 @@ export class GameScene extends Phaser.Scene {
   handleGameEnd() {
     this.gameOver = true;
 
-
     // Stop the timer and powerup systems
     if (this.timerEvent) this.timerEvent.destroy();
     if (this.powerupSpawnTimer) this.powerupSpawnTimer.destroy();
@@ -514,6 +514,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.UI.TIMER_Y,
         "Time: 01:00",
         {
+          fontFamily: '"Press Start 2P"',
           fontSize: GAME_CONFIG.UI.FONT_SIZES.TIMER,
           fill: "#fff",
           backgroundColor: "#222",
@@ -533,6 +534,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.UI.SCORE_Y,
         "Player 1: 0  -  Player 2: 0",
         {
+          fontFamily: '"Press Start 2P"',
           fontSize: GAME_CONFIG.UI.FONT_SIZES.SCORE,
           fill: "#fff",
           backgroundColor: "#1976d2",
@@ -554,6 +556,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.CANVAS_HEIGHT / 2,
         "GOAL!",
         {
+          fontFamily: '"Press Start 2P"',
           fontSize: GAME_CONFIG.UI.FONT_SIZES.GOAL_EFFECT,
           fill: "#ffff00",
           stroke: "#000000",
@@ -569,6 +572,7 @@ export class GameScene extends Phaser.Scene {
     // Win message (centered, hidden by default)
     this.winText = this.add
       .text(GAME_CONFIG.CANVAS_WIDTH / 2, 300, "", {
+        fontFamily: '"Press Start 2P"',
         fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
         fill: "#00ff00",
         stroke: "#000000",
@@ -643,6 +647,7 @@ export class GameScene extends Phaser.Scene {
 
     // Add icon text
     const icon = this.add.text(x, y, powerupConfig.icon, {
+      fontFamily: '"Press Start 2P"',
       fontSize: "20px",
       fill: "#ffffff",
     });
@@ -783,7 +788,8 @@ export class GameScene extends Phaser.Scene {
 
   createPlayerStatsDisplay() {
     // Player 1 stats (left)
-    this.add.text(20, 130, "🔵 Player 1", {
+    this.add.text(20, 90, "🔵 Player 1", {
+      fontFamily: '"Press Start 2P"',
       fontSize: "16px",
       fill: "#1976d2",
       fontStyle: "bold",
@@ -792,9 +798,10 @@ export class GameScene extends Phaser.Scene {
     });
     this.player1StatsText = this.add.text(
       20,
-      150,
+      120,
       "⚡SPD: 1.0 | 🦘JMP: 1.0 | 📏SIZ: 1.0 | ⚽KCK: 1.0 | 🎯SHT: 1.0",
       {
+        fontFamily: '"Press Start 2P"',
         fontSize: "12px",
         fill: "#fff",
         backgroundColor: "#001122",
@@ -805,12 +812,13 @@ export class GameScene extends Phaser.Scene {
     );
 
     // Player 2/AI stats (right)
-    const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
+    const player2Name = this.gameMode === "vsAI" ? "AI" : "🔴 Player 2";
     const player2Color = this.gameMode === "vsAI" ? "#ff6600" : "#d32f2f";
     const player2BgColor = this.gameMode === "vsAI" ? "#331100" : "#220011";
 
     this.add
-      .text(GAME_CONFIG.CANVAS_WIDTH - 20, 130, `${player2Name} `, {
+      .text(GAME_CONFIG.CANVAS_WIDTH - 20, 90, `${player2Name} `, {
+        fontFamily: '"Press Start 2P"',
         fontSize: "16px",
         fill: player2Color,
         fontStyle: "bold",
@@ -822,9 +830,10 @@ export class GameScene extends Phaser.Scene {
     this.player2StatsText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH - 20,
-        150,
+        120,
         "⚡SPD: 1.0 | 🦘JMP: 1.0 | 📏SIZ: 1.0 | ⚽KCK: 1.0 | 🎯SHT: 1.0",
         {
+          fontFamily: '"Press Start 2P"',
           fontSize: "12px",
           fill: "#fff",
           backgroundColor: player2BgColor,
@@ -1119,26 +1128,27 @@ export class GameScene extends Phaser.Scene {
     this.leftCrossbar = this.physics.add.staticGroup();
     this.leftCrossbar
       .create(75, crossbarY, "pixel")
-      .setScale(50, 8)
+      .setScale(GAME_CONFIG.FIELD.GOAL_WIDTH + 100, 8)
       .refreshBody();
 
     this.rightCrossbar = this.physics.add.staticGroup();
     this.rightCrossbar
       .create(GAME_CONFIG.CANVAS_WIDTH - 75, crossbarY, "pixel")
-      .setScale(50, 8)
+      .setScale(GAME_CONFIG.FIELD.GOAL_WIDTH + 100, 8)
       .refreshBody();
 
     // Goal zones for collision detection (at the goal mouth)
     this.leftGoalZone = this.physics.add.staticGroup();
     this.leftGoalZone
       .create(75, goalY + 10, "pixel")
-      .setScale(40, GAME_CONFIG.FIELD.GOAL_HEIGHT - 10)
+      .setScale(GAME_CONFIG.FIELD.GOAL_WIDTH, GAME_CONFIG.FIELD.GOAL_HEIGHT)
       .refreshBody();
 
     this.rightGoalZone = this.physics.add.staticGroup();
     this.rightGoalZone
       .create(GAME_CONFIG.CANVAS_WIDTH - 75, goalY + 10, "pixel")
-      .setScale(40, GAME_CONFIG.FIELD.GOAL_HEIGHT - 10)
+      .setScale(GAME_CONFIG.FIELD.GOAL_WIDTH, GAME_CONFIG.FIELD.GOAL_HEIGHT)
+
       .refreshBody();
   }
 
