@@ -24,8 +24,8 @@ export const GAME_CONFIG = {
     DRAG_X: 800,
     SHOOT_COOLDOWN: 1000,
     STARTING_POSITIONS: {
-      PLAYER1: { x: 200, y: 680 },
-      PLAYER2: { x: 1336, y: 680 },
+      PLAYER1: { x: 300, y: 700 },
+      PLAYER2: { x: 1200, y: 700 },
     },
     BG_IMAGES: {
       PLAYER1: "/head-1.png", // Path to Player 1 background image
@@ -40,7 +40,6 @@ export const GAME_CONFIG = {
         shootPower: 1.0,
         name: "Player 1",
         color: 0x1976d2,
-        
       },
       PLAYER2: {
         speed: 2.0,
@@ -105,7 +104,7 @@ export const GAME_CONFIG = {
     DRAG_X: 40,
     DRAG_Y: 8,
     MAX_VELOCITY: 500,
-    STARTING_POSITION: { x: 725, y: 650 },
+    STARTING_POSITION: { x: 765, y: 650 },
     KICK_FORCE: 150,
     KICK_UPWARD_FORCE: -15,
     SEPARATION_FORCE: 20,
@@ -113,9 +112,9 @@ export const GAME_CONFIG = {
 
   // Field settings
   FIELD: {
-    GROUND_Y: 580,
-    GOAL_WIDTH: 100,
-    GOAL_HEIGHT: 125,
+    GROUND_Y: 730,
+    GOAL_WIDTH: 215,
+    GOAL_HEIGHT: 550,
     GOAL_AREA_WIDTH: 150,
     GOAL_AREA_HEIGHT: 160,
     CENTER_CIRCLE_RADIUS: 80,
@@ -129,6 +128,7 @@ export const GAME_CONFIG = {
     WHITE: 0xffffff,
     BLACK: 0x000000,
     YELLOW: 0xffff00,
+    TRANSPARENT: 0x000000,
     GREEN: 0x00ff00,
     TIMER_WARNING: 0xffff00,
     TIMER_CRITICAL: 0xff0000,
@@ -136,20 +136,20 @@ export const GAME_CONFIG = {
 
   // UI settings
   UI: {
-    TIMER_Y: 20,
-    SCORE_Y: 60,
-    CONTROLS_Y: 100,
+    TIMER_Y: 30,
+    SCORE_Y: 80,
+    CONTROLS_Y: 920,
     FONT_SIZES: {
       TIMER: "28px",
-      SCORE: "24px",
-      CONTROLS: "16px",
+      SCORE: "20px",
+      CONTROLS: "12px",
       GOAL_EFFECT: "64px",
       WIN_MESSAGE: "48px",
       RESTART_BUTTON: "20px",
       TITLE: "64px",
       SUBTITLE: "24px",
       START_BUTTON: "32px",
-      INSTRUCTIONS: "18px",
+      INSTRUCTIONS: "24px",
       MENU_FOOTER: "16px",
     },
   },
@@ -202,4 +202,4 @@ export const GAME_CONFIG = {
 
 // Pixel sprite data URL
 export const PIXEL_SPRITE =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==";
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
