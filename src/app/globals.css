@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
+
 @import "tailwindcss";
 
 :root {
@@ -18,6 +19,21 @@
     --background: #0a0a0a;
     --foreground: #ededed;
   }
+}
+
+html, body, #root, .phaser-parent {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+canvas {
+  display: block;
+  width: 100vw !important;
+  height: 100vh !important;
+  object-fit: fill;
 }
 
 body {
