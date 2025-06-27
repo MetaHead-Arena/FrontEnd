@@ -23,7 +23,7 @@ const NewAuctionModal = ({ open, onClose, onCreate }) => {
     onCreate({
       title,
       rarity,
-      topBid: `${parseFloat(startingBid).toFixed(2)} AVAX`,
+      topBid: `${parseFloat(startingBid).toFixed(2)} MHcoin`,
       rarityColor: rarity === "COMMON" ? "text-white" : rarity === "EPIC" ? "text-purple-400" : "text-yellow-400",
       numberOfBids: 0,
       playerImg: image,
@@ -64,7 +64,7 @@ const NewAuctionModal = ({ open, onClose, onCreate }) => {
           <InputBid
             type="number"
             step="0.01"
-            placeholder="Starting Bid (AVAX)"
+            placeholder="Starting Bid (MHcoin)"
             value={startingBid}
             onChange={e => setStartingBid(e.target.value)}
             className="pixelated-font text-xs"

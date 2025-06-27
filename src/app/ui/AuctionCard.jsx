@@ -4,6 +4,7 @@ import { Progress } from "./Progress";
 import InputBid from "./InputBid";
 
 const AuctionCard = ({
+  id,
   rarity,
   title,
   countdown,
@@ -11,6 +12,9 @@ const AuctionCard = ({
   rarityColor,
   numberOfBids = 5,
   playerImg,
+  status,
+  isParticipated,
+  onParticipate,
 }) => {
   const [showBidInput, setShowBidInput] = useState(false);
   const [bidAmount, setBidAmount] = useState("");
@@ -77,12 +81,17 @@ const AuctionCard = ({
     }
 
     // Success
-    setCurrentTopBid(`${newBid.toFixed(2)} AVAX`);
+    setCurrentTopBid(`${newBid.toFixed(2)} MHcoin`);
     setCurrentNumberOfBids((n) => n + 1);
     setBidMessage("Bid placed successfully!");
     setBidMessageType("success");
     setBidAmount("");
     setShowBidInput(false);
+
+    // Mark as participated
+    if (onParticipate && id) {
+      onParticipate(id);
+    }
 
     // Hide success message after 3 seconds
     setTimeout(() => {
@@ -100,10 +109,19 @@ const AuctionCard = ({
   return (
     <div className="pixel-card rounded-none overflow-hidden">
       {/* Rarity Header */}
-      <div className="bg-blue-900 border-b-4 border-yellow-400 p-3 text-center">
+      <div className="bg-blue-900 border-b-4 border-yellow-400 p-3 text-center relative">
         <h3 className={`pixelated-font text-sm tracking-wider ${rarityColor}`}>
           {rarity}
         </h3>
+        {/* Status Indicators */}
+        <div className="absolute top-1 right-1 flex gap-1">
+          {isParticipated && (
+            <div className="w-2 h-2 bg-green-400 rounded-none" title="Participated"></div>
+          )}
+          {status === "FINISHED" && (
+            <div className="w-2 h-2 bg-red-400 rounded-none" title="Finished"></div>
+          )}
+        </div>
       </div>
 
       {/* Card Content */}
@@ -154,7 +172,15 @@ const AuctionCard = ({
 
         {/* Place Bid Section */}
         <div className="space-y-3">
-          {!showBidInput ? (
+          {status === "FINISHED" ? (
+            <div className="text-center">
+              <div className="pixel-card bg-red-900 border-red-400 p-2">
+                <p className="pixelated-font text-xs text-red-400">
+                  AUCTION FINISHED
+                </p>
+              </div>
+            </div>
+          ) : !showBidInput ? (
             <div className="flex flex-col items-center">
               <PixelButton
                 text="PLACE BID"

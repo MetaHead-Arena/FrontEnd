@@ -20,7 +20,7 @@ const MyAuctions = ({ auctions, onEdit, onDelete, onEnd }) => {
   };
 
   const handleEditSave = (id) => {
-    onEdit(id, { title: editTitle, topBid: `${parseFloat(editBid).toFixed(2)} AVAX` });
+    onEdit(id, { title: editTitle, topBid: `${parseFloat(editBid).toFixed(2)} MHcoin` });
     setEditingId(null);
     setEditTitle("");
     setEditBid("");
