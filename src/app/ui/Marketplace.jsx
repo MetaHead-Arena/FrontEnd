@@ -35,7 +35,7 @@ const auctionData = [
     topBid: "7,00 AVAX",
     rarityColor: "text-yellow-400",
     numberOfBids: 12,
-    playerImg: "/head-1.png",
+    playerImg: "/head-3.png",
   },
   {
     id: 4,
@@ -45,7 +45,7 @@ const auctionData = [
     topBid: "7,00 AVAX",
     rarityColor: "text-yellow-400",
     numberOfBids: 12,
-    playerImg: "/head-2.png",
+    playerImg: "/head-3.png",
   },
   {
     id: 5,
@@ -55,7 +55,7 @@ const auctionData = [
     topBid: "7,00 AVAX",
     rarityColor: "text-yellow-400",
     numberOfBids: 12,
-    playerImg: "/head-2.png",
+    playerImg: "/head-3.png",
   },
   {
     id: 6,
@@ -63,7 +63,7 @@ const auctionData = [
     title: "COMMON PLAYER",
     countdown: "5:00:00",
     topBid: "7,00 AVAX",
-    rarityColor: "text-yellow-400",
+    rarityColor: "text-white",
     numberOfBids: 12,
     playerImg: "/head-1.png",
   },
@@ -73,7 +73,7 @@ const auctionData = [
     title: "EPIC PLAYER",
     countdown: "5:00:00",
     topBid: "7,00 AVAX",
-    rarityColor: "text-yellow-400",
+    rarityColor: "text-purple-400",
     numberOfBids: 12,
     playerImg: "/head-2.png",
   },
@@ -83,7 +83,7 @@ const auctionData = [
     title: "COMMON PLAYER",
     countdown: "5:00:00",
     topBid: "7,00 AVAX",
-    rarityColor: "text-yellow-400",
+    rarityColor: "text-white",
     numberOfBids: 12,
     playerImg: "/head-1.png",
   },
@@ -93,9 +93,9 @@ const auctionData = [
     title: "EPIC PLAYER",
     countdown: "5:00:00",
     topBid: "7,00 AVAX",
-    rarityColor: "text-yellow-400",
+    rarityColor: "text-purple-400",
     numberOfBids: 12,
-    playerImg: "/head-1.png",
+    playerImg: "/head-2.png",
   },
 ];
 
@@ -161,6 +161,7 @@ const Marketplace = ({ onBack }) => {
         {/* New Auction Button */}
         <div className="mb-8 flex justify-center">
           <PixelButton
+            variant="marketplace"
             text="NEW AUCTION"
             size="large"
             className="w-[320px] text-lg"
