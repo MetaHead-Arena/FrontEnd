@@ -91,7 +91,8 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           {/* Redeem Chests Section */}
           <div style={{ marginTop: 32, width: "100%" }}>
             <PixelButton
-              className="w-full h-[72px] text-[2rem] flex items-center justify-center"
+              variant="menu"
+              size="large"
               onClick={() => setShowChestModal(true)}
               style={{
                 display: "flex",
@@ -140,29 +141,32 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
         }}
       >
         <div className={`${isConnected ? "block" : "hidden"} mb-4`}>
-          <PixelButton className="w-full h-[72px] text-[2rem] leading-none px-0 py-0 flex flex-col items-center justify-center">
-            ENTER GAME
-            <span className="text-[1.1rem] mt-1">ONLINE 1VS1</span>
+          <PixelButton variant="menu" size="hald-custom">
+            <span className="flex flex-col items-center w-full leading-tight">
+              <span>ENTER GAME</span>
+              <span className="text-xs mt-0.5" style={{ fontWeight: 400 }}>
+                ONLINE 1VS1
+              </span>
+            </span>
           </PixelButton>
         </div>
         <div className="button-row-custom">
           <PixelButton
-            className="button-half-custom"
+            variant="menu"
+            size="half-custom"
             onClick={() => onSelectMode("2player")}
           >
             OFFLINE
           </PixelButton>
           <PixelButton
-            className="button-half-custom"
+            variant="menu"
+            size="half-custom"
             onClick={() => onSelectMode("vsAI")}
           >
             1 VS AI
           </PixelButton>
         </div>
-        <PixelButton
-          className="w-full h-[60px] text-[2rem] flex items-center justify-center"
-          onClick={onMarketplace}
-        >
+        <PixelButton variant="menu" size="large" onClick={onMarketplace}>
           MARKETPLACE
         </PixelButton>
       </div>
