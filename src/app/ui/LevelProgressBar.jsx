@@ -13,11 +13,13 @@ const BAR_WIDTH = 200;
 // Level and XP utility functions
 function getXPForLevel(level) {
   if (level < 1) return 0;
+  if (level == 1) return 100;
   return Math.floor((100 * level * (100 + level)) / 100);
 }
 
 function getLevelFromXP(totalXP) {
   if (totalXP < 100) return 0;
+  if (totalXP == 100) return 1;
 
   let left = 1;
   let right = 255;
