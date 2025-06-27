@@ -1,4 +1,4 @@
-export const PLAYER_NFT_ADDRESS = "0x46B5acc9006CA5a609B122aa10bE64841464d242";
+export const PLAYER_NFT_ADDRESS = "0xd86026BECAb8E9eFA531E34b739eea8FD517a976";
 export const PLAYER_NFT_ABI = [
   {
     inputs: [],
