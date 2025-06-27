@@ -1,35 +1,41 @@
 import React from "react";
 import "./PixelUI.css";
 
+const VARIANT_CLASSES = {
+  menu: "pixel-button-menu",
+  marketplace: "pixel-btn",
+  default: "pixel-btn",
+};
+
+const SIZE_CLASSES = {
+  small: "px-4 py-2 text-xs",
+  medium: "px-6 py-3 text-base",
+  large: "px-8 py-4 text-lg",
+  "half-custom": "button-half-custom",
+};
+
 const PixelButton = ({
   text,
+  variant = "default",
   size = "medium",
   onClick,
   children,
   className = "",
   style,
+  ...props
 }) => {
-  const getSizeClasses = () => {
-    switch (size) {
-      case "small":
-        return "px-4 py-2 text-xs";
-      case "medium":
-        return "px-6 py-3 text-base";
-      case "large":
-        return "px-8 py-4 text-lg";
-      default:
-        return "px-6 py-3 text-base";
-    }
-  };
+  const variantClass = VARIANT_CLASSES[variant] || VARIANT_CLASSES.default;
+  const sizeClass = SIZE_CLASSES[size] || SIZE_CLASSES.medium;
+
   return (
     <button
       onClick={onClick}
       className={`
-        ${getSizeClasses()} pixel-btn pixelated-font font-bold tracking-wider select-none rounded-none uppercase
-        bg-[#223a7a] text-[#ffd600] border-4 border-[#ffd600] shadow-lg
+        ${variantClass} ${sizeClass} pixelated-font font-bold tracking-wider select-none rounded-none uppercase
         ${className}
       `}
-      style={{ ...style, textShadow: "2px 2px 0 #23234c" }}
+      style={style}
+      {...props}
     >
       {text || children}
     </button>
