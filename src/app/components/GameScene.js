@@ -12,6 +12,8 @@ export class GameScene extends Phaser.Scene {
     this.gameOver = false;
     this.goalCooldown = 0;
     this.pausedForGoal = false;
+    this.overlayGroup = null;
+    this.isPaused = false;
 
     // Timer system
     this.gameTime = GAME_CONFIG.GAME_DURATION;
@@ -32,14 +34,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   init(data) {
-    // Set game mode from window object (set by React component)
     if (typeof window !== "undefined" && window.__HEADBALL_GAME_MODE) {
       this.gameMode = window.__HEADBALL_GAME_MODE;
     } else if (data && data.gameMode) {
-      // Fallback to data parameter if window is not available
       this.gameMode = data.gameMode;
     }
-    // Default remains "2player" if neither is available
   }
 
   preload() {
@@ -47,30 +46,24 @@ export class GameScene extends Phaser.Scene {
     this.load.image("player1", "/head-1.png");
     this.load.image("player2", "/head-2.png");
     this.load.image("ball", "/ball.png");
-    this.load.image("court", "/court.png"); // Load pixel-art stadium background // Load pixel-art stadium background
+    this.load.image("court", "/court.png");
   }
 
   resetGameState() {
-    // Reset all game state variables
     this.player1Score = 0;
     this.player2Score = 0;
     this.gameOver = false;
     this.goalCooldown = 0;
     this.pausedForGoal = false;
-
-    // Reset timer system
     this.gameTime = GAME_CONFIG.GAME_DURATION;
     this.timerEvent = null;
     this.gameStarted = false;
-
-    // Reset power-up system
     this.powerups = [];
     this.powerupSpawnTimer = null;
     this.lastPlayerToTouchBall = null;
   }
 
   create() {
-    // Set world bounds and gravity
     this.physics.world.setBounds(
       0,
       0,
@@ -79,25 +72,13 @@ export class GameScene extends Phaser.Scene {
     );
     this.physics.world.gravity.y = GAME_CONFIG.GRAVITY;
 
-    // Reset all game state variables
     this.resetGameState();
 
-    // // Draw field background and markings
-    // this.add.rectangle(
-    //   GAME_CONFIG.CANVAS_WIDTH / 2,
-    //   GAME_CONFIG.CANVAS_HEIGHT / 2,
-    //   GAME_CONFIG.CANVAS_WIDTH,
-    //   GAME_CONFIG.CANVAS_HEIGHT,
-    //   GAME_CONFIG.COLORS.FIELD_GREEN
-    // );
-    // Add pixel-art stadium background image
     this.add.image(0, 0, "court").setOrigin(0, 0).setDisplaySize(1536, 1024);
 
-    // Create field boundaries and goal posts
     this.createFieldBoundaries();
     this.createGoalPosts();
 
-    // Setup controls
     this.cursors = this.input.keyboard.createCursorKeys();
     this.rightShift = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.SHIFT_RIGHT
@@ -111,64 +92,201 @@ export class GameScene extends Phaser.Scene {
     this.space = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE
     );
+    this.input.keyboard.on("keydown-ESC", this.handlePause, this);
 
-    // Create players, ball, UI, and other game components
-    this.createPlayers();
-    this.createBall();
-    this.createUI();
-    this.createPlayerStatsDisplay();
-    this.startGameTimer();
-    this.physics.add.collider(this.player1.sprite, this.player2.sprite);
-
-    // Reset all game state variables
-    this.resetGameState();
-
-    // Set world bounds and gravity
-    this.physics.world.setBounds(
-      0,
-      0,
-      GAME_CONFIG.CANVAS_WIDTH,
-      GAME_CONFIG.CANVAS_HEIGHT
-    );
-    this.physics.world.gravity.y = GAME_CONFIG.GRAVITY;
-
-    this.add.rectangle(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.CANVAS_HEIGHT / 2,
-      GAME_CONFIG.CANVAS_WIDTH,
-      GAME_CONFIG.CANVAS_HEIGHT,
-      GAME_CONFIG.COLORS.FIELD_GREEN
-    );
-
-    // Add pixel-art stadium background image
-    this.add.image(0, 0, "court").setOrigin(0, 0).setDisplaySize(1536, 1024);
-
-    // Create field boundaries and goal posts
-    this.createFieldBoundaries();
-    this.createGoalPosts();
-
-    // Setup game components
     this.createPlayers();
     this.createBall();
     this.createUI();
     this.createPlayerStatsDisplay();
     this.startGameTimer();
     this.startPowerupSystem();
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.rightShift = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.SHIFT_RIGHT
-    );
+    this.physics.add.collider(this.player1.sprite, this.player2.sprite);
+  }
 
-    // For WASD controls
-    this.wasd = {
-      W: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-      A: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-      S: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-    };
-    this.space = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.SPACE
-    );
+  // --- Overlay Creation Helper ---
+  showOverlay({ message, buttons }) {
+    if (this.overlayGroup && this.overlayGroup.children) {
+      this.overlayGroup.clear(true, true);
+    }
+    this.overlayGroup = null;
+    this.overlayGroup = this.add.group();
+
+    const overlay = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH,
+        GAME_CONFIG.CANVAS_HEIGHT,
+        0x000000,
+        0.8
+      )
+      .setDepth(9999);
+    this.overlayGroup.add(overlay);
+
+    const msgText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 80,
+        message,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
+          fill: "#fff",
+          stroke: "#000",
+          strokeThickness: 4,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(msgText);
+
+    // Buttons in a column with margin
+    const buttonYStart = GAME_CONFIG.CANVAS_HEIGHT / 2 + 10;
+    const buttonSpacing = 80; // vertical space between buttons
+
+    buttons.forEach((btn, i) => {
+      const btnWidth = 260,
+        btnHeight = 60;
+      const btnX = GAME_CONFIG.CANVAS_WIDTH / 2;
+      const btnY = buttonYStart + i * buttonSpacing;
+
+      // Button background
+      const btnRect = this.add
+        .rectangle(btnX, btnY, btnWidth, btnHeight, 0x22223a, 1)
+        .setStrokeStyle(4, 0xfacc15)
+        .setDepth(10001)
+        .setInteractive({ useHandCursor: true });
+      this.overlayGroup.add(btnRect);
+
+      // Button text
+      const btnText = this.add
+        .text(btnX, btnY, btn.text, {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#fde047",
+          align: "center",
+          wordWrap: { width: btnWidth - 32, useAdvancedWrap: true },
+          padding: { x: 8, y: 4 },
+        })
+        .setOrigin(0.5)
+        .setDepth(10002);
+      this.overlayGroup.add(btnText);
+
+      btnRect.on("pointerdown", btn.onClick);
+      btnText
+        .setInteractive({ useHandCursor: true })
+        .on("pointerdown", btn.onClick);
+    });
+  }
+
+  // --- End Game ---
+  handleGameEnd() {
+    this.gameOver = true;
+    if (this.timerEvent) this.timerEvent.destroy();
+    if (this.powerupSpawnTimer) this.powerupSpawnTimer.destroy();
+
+    this.powerups.forEach((powerup) => {
+      if (powerup.lifetimeTimer) powerup.lifetimeTimer.destroy();
+      if (powerup.sprite && powerup.sprite.active) powerup.sprite.destroy();
+      if (powerup.icon && powerup.icon.active) powerup.icon.destroy();
+    });
+    this.powerups = [];
+
+    let resultMessage = "";
+    let resultColor = "#00ff00";
+
+    if (this.player1Score > this.player2Score) {
+      resultMessage = "🏆 Player 1 Wins! 🎉";
+      resultColor = "#1976d2";
+    } else if (this.player2Score > this.player1Score) {
+      const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
+      resultMessage = `🏆 ${player2Name} Wins! 🎉`;
+      resultColor = "#d32f2f";
+    } else {
+      resultMessage = "🤝 It's a Draw! 🤝";
+      resultColor = "#ffaa00";
+    }
+
+    this.showOverlay({
+      message: resultMessage,
+      buttons: [
+        {
+          text: "REMATCH",
+          onClick: () => {
+            if (this.overlayGroup && this.overlayGroup.children) {
+              this.overlayGroup.clear(true, true);
+            }
+            this.overlayGroup = null;
+            this.scene.restart({ gameMode: this.gameMode });
+          },
+        },
+        {
+          text: "BACK TO MAIN MENU",
+          onClick: () => {
+            if (this.overlayGroup && this.overlayGroup.children) {
+              this.overlayGroup.clear(true, true);
+            }
+            this.overlayGroup = null;
+            this.restartGame();
+          },
+        },
+      ],
+    });
+
+    if (this.ball && this.ball.body) this.ball.body.setVelocity(0, 0);
+    if (this.player1 && this.player1.sprite.body)
+      this.player1.sprite.body.setVelocity(0, 0);
+    if (this.player2 && this.player2.sprite.body)
+      this.player2.sprite.body.setVelocity(0, 0);
+  }
+
+  // --- Pause ---
+  handlePause() {
+    if (this.isPaused || this.gameOver) return;
+    this.isPaused = true;
+    if (this.timerEvent) this.timerEvent.paused = true;
+    this.physics.world.pause();
+
+    this.showOverlay({
+      message: "GAME PAUSED",
+      buttons: [
+        {
+          text: "RESUME",
+          onClick: () => {
+            if (this.overlayGroup) {
+              this.overlayGroup.clear(true, true);
+              this.overlayGroup = null;
+            }
+            this.isPaused = false;
+            this.physics.world.resume();
+            if (this.timerEvent) this.timerEvent.paused = false;
+          },
+        },
+        {
+          text: "REMATCH",
+          onClick: () => {
+            if (this.overlayGroup) {
+              this.overlayGroup.clear(true, true);
+              this.overlayGroup = null;
+            }
+            this.isPaused = false;
+            this.scene.restart({ gameMode: this.gameMode });
+          },
+        },
+        {
+          text: "BACK TO MAIN MENU",
+          onClick: () => {
+            if (this.overlayGroup) {
+              this.overlayGroup.clear(true, true);
+              this.overlayGroup = null;
+            }
+            this.isPaused = false;
+            this.restartGame();
+          },
+        },
+      ],
+    });
   }
 
   createFieldBoundaries() {
@@ -471,40 +589,121 @@ export class GameScene extends Phaser.Scene {
       resultColor = "#ffaa00";
     }
 
-    // Enhanced result display
-    this.winText.setText(resultMessage);
-    this.winText.setStyle({
-      fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
-      fill: resultColor,
-      stroke: "#000000",
-      strokeThickness: 3,
-      align: "center",
+    // // Enhanced result display
+    // this.winText.setText(resultMessage);
+    // this.winText.setStyle({
+    //   fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
+    //   fill: resultColor,
+    //   stroke: "#000000",
+    //   strokeThickness: 3,
+    //   align: "center",
+    // });
+
+    // // Add final score summary
+    // const finalScoreText = this.add.text(
+    //   GAME_CONFIG.CANVAS_WIDTH / 2,
+    //   350,
+    //   `Final Score: ${this.player1Score} - ${this.player2Score}`,
+    //   {
+    //     fontSize: "24px",
+    //     fill: "#ffffff",
+    //     stroke: "#000000",
+    //     strokeThickness: 2,
+    //     align: "center",
+    //   }
+    // );
+    // finalScoreText.setOrigin(0.5, 0.5);
+    // finalScoreText.setDepth(2000);
+
+    // this.winText.setVisible(true);
+    // this.restartButton.setVisible(true);
+
+    // // Stop all movement
+    // this.ball.body.setVelocity(0, 0);
+    // this.player1.sprite.body.setVelocity(0, 0);
+    // this.player2.sprite.body.setVelocity(0, 0);
+    // Show overlay with Rematch and Back to Main Menu
+    this.showOverlay({
+      message: resultMessage,
+      buttons: [
+        {
+          text: "REMATCH",
+          onClick: () => {
+            this.overlayGroup.clear(true, true);
+            this.scene.restart({ gameMode: this.gameMode });
+          },
+        },
+        {
+          text: "BACK TO MAIN MENU",
+          onClick: () => {
+            this.overlayGroup.clear(true, true);
+            this.restartGame();
+          },
+        },
+      ],
     });
-
-    // Add final score summary
-    const finalScoreText = this.add.text(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      350,
-      `Final Score: ${this.player1Score} - ${this.player2Score}`,
-      {
-        fontSize: "24px",
-        fill: "#ffffff",
-        stroke: "#000000",
-        strokeThickness: 2,
-        align: "center",
-      }
-    );
-    finalScoreText.setOrigin(0.5, 0.5);
-    finalScoreText.setDepth(2000);
-
-    this.winText.setVisible(true);
-    this.restartButton.setVisible(true);
 
     // Stop all movement
     this.ball.body.setVelocity(0, 0);
     this.player1.sprite.body.setVelocity(0, 0);
     this.player2.sprite.body.setVelocity(0, 0);
   }
+
+  // handleGameEnd() {
+  //   this.gameOver = true;
+  //   if (this.timerEvent) this.timerEvent.destroy();
+  //   if (this.powerupSpawnTimer) this.powerupSpawnTimer.destroy();
+
+  //   // Clean up remaining power-ups
+  //   this.powerups.forEach((powerup) => {
+  //     if (powerup.lifetimeTimer) {
+  //       powerup.lifetimeTimer.destroy();
+  //     }
+  //     if (powerup.sprite && powerup.sprite.active) {
+  //       powerup.sprite.destroy();
+  //     }
+  //     if (powerup.icon && powerup.icon.active) {
+  //       powerup.icon.destroy();
+  //     }
+  //   });
+  //   this.powerups = [];
+
+  //   let resultMessage = "";
+  //   if (this.player1Score > this.player2Score) {
+  //     resultMessage = "🏆 Player 1 Wins! 🎉";
+  //   } else if (this.player2Score > this.player1Score) {
+  //     const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
+  //     resultMessage = `🏆 ${player2Name} Wins! 🎉`;
+  //   } else {
+  //     resultMessage = "🤝 It's a Draw! 🤝";
+  //   }
+
+  //   // Show overlay with Rematch and Back to Main Menu
+  //   this.showOverlay({
+  //     message: resultMessage,
+  //     buttons: [
+  //       {
+  //         text: "REMATCH",
+  //         onClick: () => {
+  //           this.overlayGroup.clear(true, true);
+  //           this.scene.restart({ gameMode: this.gameMode });
+  //         },
+  //       },
+  //       {
+  //         text: "BACK TO MAIN MENU",
+  //         onClick: () => {
+  //           this.overlayGroup.clear(true, true);
+  //           this.restartGame();
+  //         },
+  //       },
+  //     ],
+  //   });
+
+  //   // Stop all movement
+  //   this.ball.body.setVelocity(0, 0);
+  //   this.player1.sprite.body.setVelocity(0, 0);
+  //   this.player2.sprite.body.setVelocity(0, 0);
+  // }
 
   createUI() {
     // Timer display (top center)
@@ -583,26 +782,10 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5)
       .setDepth(4000)
       .setVisible(false);
-
-    // Restart button (centered, hidden by default)
-    this.restartButton = this.add
-      .text(GAME_CONFIG.CANVAS_WIDTH / 2, 400, "Press R to Return to Menu", {
-        fontSize: GAME_CONFIG.UI.FONT_SIZES.RESTART_BUTTON,
-        fill: "#fff",
-        backgroundColor: "#007700",
-        padding: { x: 15, y: 8 },
-        align: "center",
-        borderRadius: 8,
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5, 0.5)
-      .setDepth(4000)
-      .setVisible(false);
-
     // Restart key
-    this.restartKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.R
-    );
+    // this.restartKey = this.input.keyboard.addKey(
+    //   Phaser.Input.Keyboard.KeyCodes.R
+    // );
   }
 
   startPowerupSystem() {
@@ -846,7 +1029,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   updatePlayerStatsDisplay() {
-    if (!this.player1StatsText || !this.player2StatsText) return;
+    if (
+      !this.player1 ||
+      !this.player2 ||
+      !this.player1StatsText ||
+      !this.player2StatsText ||
+      !this.player1.currentAttributes ||
+      !this.player2.currentAttributes
+    ) {
+      return;
+    }
     // Update Player 1 stats with enhanced formatting
     this.player1.updateCurrentAttributes();
     const p1Current = this.player1.currentAttributes;
@@ -1056,7 +1248,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateTimer() {
-    if (this.gameOver || this.pausedForGoal) return;
+    if (this.gameOver || this.pausedForGoal || this.isPaused) return;
 
     this.gameTime--;
     this.updateTimerDisplay();
@@ -1218,19 +1410,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   update() {
+    if (this.isPaused || this.gameOver || this.pausedForGoal) return;
+    if (!this.player1 || !this.player2 || !this.ball) return;
+
     this.player1.update();
     this.player2.update();
     if (this.goalCooldown > 0) this.goalCooldown--;
-    if (this.gameOver && this.restartKey.isDown) {
-      this.restartGame();
-    }
-    if (this.gameOver || this.pausedForGoal) return;
-    if (this.player1) this.player1.update();
-    if (this.player2) this.player2.update();
-    if (this.ball) {
-      this.checkBallBounds();
-    }
-    // Update player stats display to show power-up effects
+
+    this.checkBallBounds();
     this.updatePlayerStatsDisplay();
   }
 }
