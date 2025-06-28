@@ -22,6 +22,7 @@ const PixelButton = ({
   children,
   className = "",
   style,
+  isActive,
   ...props
 }) => {
   const variantClass = VARIANT_CLASSES[variant] || VARIANT_CLASSES.default;
