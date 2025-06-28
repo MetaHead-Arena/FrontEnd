@@ -11,7 +11,7 @@ if (!projectId) {
 
 export const networks = [avalancheFuji];
 
-//Set up the Wagmi Adapter (Config)
+//Set up the Wagmi Adapter (Config) - MetaMask only
 export const wagmiAdapter = new WagmiAdapter({
   storage: createStorage({
     storage: cookieStorage,
@@ -19,6 +19,9 @@ export const wagmiAdapter = new WagmiAdapter({
   ssr: true,
   projectId,
   networks,
+  connectorImages: {
+    metaMask: "https://avatars.githubusercontent.com/u/11744586?s=48&v=4",
+  },
 });
 
 export const config = wagmiAdapter.wagmiConfig;
