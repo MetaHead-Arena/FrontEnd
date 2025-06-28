@@ -27,7 +27,7 @@ const auctionData = [
     endAt: "1719504930",
     blockTimestamp: "1719496930",
     winner: null,
-    winningAmount: null
+    winningAmount: null,
   },
   {
     id: "2",
@@ -47,7 +47,7 @@ const auctionData = [
     endAt: "1719527712",
     blockTimestamp: "1719496930",
     winner: null,
-    winningAmount: null
+    winningAmount: null,
   },
   {
     id: "3",
@@ -67,7 +67,7 @@ const auctionData = [
     endAt: "1719496930",
     blockTimestamp: "1719410530",
     winner: "0xdef456789012cdef456789012cdef456789012cd",
-    winningAmount: "7000000000000000000"
+    winningAmount: "7000000000000000000",
   },
   {
     id: "4",
@@ -87,7 +87,7 @@ const auctionData = [
     endAt: "1719514930",
     blockTimestamp: "1719496930",
     winner: null,
-    winningAmount: null
+    winningAmount: null,
   },
   {
     id: "5",
@@ -107,7 +107,7 @@ const auctionData = [
     endAt: "1719514930",
     blockTimestamp: "1719496930",
     winner: null,
-    winningAmount: null
+    winningAmount: null,
   },
   {
     id: "6",
@@ -127,7 +127,7 @@ const auctionData = [
     endAt: "1719496930",
     blockTimestamp: "1719410530",
     winner: "0x789012cdef789012cdef789012cdef789012cdef7",
-    winningAmount: "7000000000000000000"
+    winningAmount: "7000000000000000000",
   },
   {
     id: "7",
@@ -147,7 +147,7 @@ const auctionData = [
     endAt: "1719514930",
     blockTimestamp: "1719496930",
     winner: null,
-    winningAmount: null
+    winningAmount: null,
   },
   {
     id: "8",
@@ -167,7 +167,7 @@ const auctionData = [
     endAt: "1719514930",
     blockTimestamp: "1719496930",
     winner: null,
-    winningAmount: null
+    winningAmount: null,
   },
   {
     id: "9",
@@ -187,8 +187,8 @@ const auctionData = [
     endAt: "1719496930",
     blockTimestamp: "1719410530",
     winner: "0x12cdef9012cdef9012cdef9012cdef9012cdef901",
-    winningAmount: "7000000000000000000"
-  }
+    winningAmount: "7000000000000000000",
+  },
 ];
 
 const Marketplace = ({ onBack }) => {
@@ -206,12 +206,11 @@ const Marketplace = ({ onBack }) => {
     setError(null);
     try {
       const data = await fetchAuctionData(address);
-     // setAuctions(data);
-     setAuctions([...auctionData]);
-
+      // setAuctions(data);
+      setAuctions([...auctionData]);
     } catch (err) {
-      console.error('Failed to load auction data:', err);
-      setError('Failed to load auctions. Please try again.');
+      console.error("Failed to load auction data:", err);
+      setError("Failed to load auctions. Please try again.");
       // Fallback to dummy data if API fails
       setAuctions([...auctionData]);
     } finally {
@@ -222,10 +221,10 @@ const Marketplace = ({ onBack }) => {
   // Fetch auction data from The Graph
   useEffect(() => {
     loadAuctionData();
-    
+
     // Refresh data every 30 seconds
     const interval = setInterval(loadAuctionData, 30000);
-    
+
     return () => clearInterval(interval);
   }, [address]);
 
@@ -250,17 +249,22 @@ const Marketplace = ({ onBack }) => {
 
     // Filter by rarity
     if (selectedRarity !== "ALL") {
-      filtered = filtered.filter((auction) => auction.rarity === selectedRarity);
+      filtered = filtered.filter(
+        (auction) => auction.rarity === selectedRarity
+      );
     }
 
     return filtered;
   }, [selectedRarity, selectedStatus, auctions]);
 
   const myAuctions = useMemo(
-    () => auctions.filter((auction) => 
-      auction.manager && address && 
-      auction.manager.toLowerCase() === address.toLowerCase()
-    ),
+    () =>
+      auctions.filter(
+        (auction) =>
+          auction.manager &&
+          address &&
+          auction.manager.toLowerCase() === address.toLowerCase()
+      ),
     [auctions, address]
   );
 
@@ -274,7 +278,7 @@ const Marketplace = ({ onBack }) => {
 
   const handleEditAuction = async (id, updatedData) => {
     // Note: In a real implementation, you would update the auction on-chain here
-    console.log('Edit auction:', id, updatedData);
+    console.log("Edit auction:", id, updatedData);
     // For now, just reload data after a delay
     setTimeout(() => {
       loadAuctionData();
@@ -283,7 +287,7 @@ const Marketplace = ({ onBack }) => {
 
   const handleDeleteAuction = async (id) => {
     // Note: In a real implementation, you would cancel/delete the auction on-chain here
-    console.log('Delete auction:', id);
+    console.log("Delete auction:", id);
     // For now, just reload data after a delay
     setTimeout(() => {
       loadAuctionData();
@@ -292,7 +296,7 @@ const Marketplace = ({ onBack }) => {
 
   const handleEndAuction = async (id) => {
     // Note: In a real implementation, you would end the auction on-chain here
-    console.log('End auction:', id);
+    console.log("End auction:", id);
     // For now, just reload data after a delay
     setTimeout(() => {
       loadAuctionData();
@@ -300,7 +304,9 @@ const Marketplace = ({ onBack }) => {
   };
 
   const handleParticipate = (id) => {
-    setAuctions(auctions.map((a) => (a.id === id ? { ...a, isParticipated: true } : a)));
+    setAuctions(
+      auctions.map((a) => (a.id === id ? { ...a, isParticipated: true } : a))
+    );
   };
 
   return (
@@ -329,9 +335,13 @@ const Marketplace = ({ onBack }) => {
             <h1 className="metahead-main">METAHEAD MARKETPLACE</h1>
             {/* Wallet Status */}
             <div className="absolute top-2 right-2 flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-none ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+              <div
+                className={`w-2 h-2 rounded-none ${
+                  isConnected ? "bg-green-400" : "bg-red-400"
+                }`}
+              ></div>
               <span className="pixelated-font text-xs text-white">
-                {isConnected ? 'CONNECTED' : 'NOT CONNECTED'}
+                {isConnected ? "CONNECTED" : "NOT CONNECTED"}
               </span>
             </div>
           </div>
@@ -346,8 +356,8 @@ const Marketplace = ({ onBack }) => {
           />
           <PixelButton
             text={loading ? "LOADING..." : "REFRESH"}
-            size="medium"
-            className="w-[120px]"
+            size="large"
+            className="w-[250px]"
             onClick={loadAuctionData}
             disabled={loading}
           />
@@ -389,9 +399,7 @@ const Marketplace = ({ onBack }) => {
             {error && (
               <div className="text-center py-4">
                 <div className="pixel-card bg-red-900 border-red-400 p-4 inline-block">
-                  <p className="text-red-400 pixelated-font text-sm">
-                    {error}
-                  </p>
+                  <p className="text-red-400 pixelated-font text-sm">{error}</p>
                   <PixelButton
                     text="RETRY"
                     size="small"
@@ -443,7 +451,9 @@ const Marketplace = ({ onBack }) => {
               <div className="text-center py-8">
                 <div className="pixel-card rounded-none p-6 inline-block">
                   <p className="text-white pixelated-font text-sm">
-                    NO {selectedStatus !== "ALL" ? selectedStatus : ""} {selectedRarity !== "ALL" ? selectedRarity : ""} AUCTIONS FOUND
+                    NO {selectedStatus !== "ALL" ? selectedStatus : ""}{" "}
+                    {selectedRarity !== "ALL" ? selectedRarity : ""} AUCTIONS
+                    FOUND
                   </p>
                 </div>
               </div>
