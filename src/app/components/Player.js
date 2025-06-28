@@ -1,11 +1,11 @@
 import { GAME_CONFIG } from "./config.js";
 
 export class Player {
-  constructor(scene, x, y, playerKey, controls) {
+  constructor(scene, x, y, playerKey, controls, spriteKey = "player1") {
     this.scene = scene;
     this.controls = controls;
     this.playerKey = playerKey;
-
+    // this.sprite = scene.physics.add.sprite(x, y, spriteKey);
     // Get attributes from config (with fallback to defaults)
     this.attributes = GAME_CONFIG.PLAYER.ATTRIBUTES[playerKey] || {
       ...GAME_CONFIG.PLAYER.DEFAULT_ATTRIBUTES,
@@ -35,7 +35,7 @@ export class Player {
       GAME_CONFIG.PLAYER.BASE_SHOOT_POWER * this.currentAttributes.shootPower;
 
     // Create player sprite with texture
-    const textureKey = playerKey.toLowerCase(); // 'PLAYER1' -> 'player1'
+    const textureKey = spriteKey || playerKey.toLowerCase();
     this.sprite = scene.physics.add.sprite(x, y, textureKey);
     this.sprite.setOrigin(0.5, 1); // Bottom center
 
