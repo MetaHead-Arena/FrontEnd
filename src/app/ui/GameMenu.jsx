@@ -17,6 +17,7 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const { address, isConnected } = useAccount();
   const [selectedPlayer, setSelectedPlayer] = useState(1);
   const [showChestModal, setShowChestModal] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
 
   const handlePlayerChange = (direction) => {
     if (direction === "next") {
@@ -24,6 +25,14 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
     } else {
       setSelectedPlayer((prev) => (prev === 1 ? 4 : prev - 1));
     }
+  };
+
+  const handleOnlineClick = () => {
+    setShowLoader(true);
+    setTimeout(() => {
+      setShowLoader(false);
+      onSelectMode("online");
+    }, 3000);
   };
 
   return (
@@ -141,7 +150,11 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
         }}
       >
         <div className={`${isConnected ? "block" : "hidden"} mb-4`}>
-          <PixelButton variant="menu" size="hald-custom">
+          <PixelButton
+            variant="menu"
+            size="hald-custom"
+            onClick={handleOnlineClick}
+          >
             <span className="flex flex-col items-center w-full leading-tight">
               <span>ENTER GAME</span>
               <span className="text-xs mt-0.5" style={{ fontWeight: 400 }}>
@@ -173,6 +186,32 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
 
       {showChestModal && (
         <ChestRedeemModal onClose={() => setShowChestModal(false)} />
+      )}
+
+      {showLoader && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.85)",
+            zIndex: 10000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <span
+            style={{
+              color: "#fde047",
+              fontFamily: '"Press Start 2P", monospace',
+              fontSize: 28,
+              letterSpacing: 2,
+              textShadow: "2px 2px 0 #000",
+            }}
+          >
+            Searching for opponents...
+          </span>
+        </div>
       )}
     </div>
   );
