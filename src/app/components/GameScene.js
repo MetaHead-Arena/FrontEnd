@@ -105,6 +105,21 @@ export class GameScene extends Phaser.Scene {
     this.startGameTimer();
     this.startPowerupSystem();
     this.physics.add.collider(this.player1.sprite, this.player2.sprite);
+
+    // Notify that game engine has finished loading
+    this.notifyGameLoaded();
+  }
+
+  notifyGameLoaded() {
+    // Small delay to ensure everything is properly initialized
+    this.time.delayedCall(100, () => {
+      console.log("Game engine fully loaded and ready");
+
+      // Call the global callback if available (for online games)
+      if (typeof window !== "undefined" && window.__HEADBALL_GAME_LOADED) {
+        window.__HEADBALL_GAME_LOADED();
+      }
+    });
   }
 
   // --- Overlay Creation Helper ---

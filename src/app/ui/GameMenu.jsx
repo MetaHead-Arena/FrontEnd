@@ -61,23 +61,21 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
         : socketService.getPlayersInRoom();
       setPlayersInRoom(currentPlayers);
 
-      // If we have 2 players, auto-emit player-ready after a short delay
+      // If we have 2 players, start the game (loading screen will handle player-ready)
       if (currentPlayers >= 2) {
         setTimeout(() => {
           setWaitingForPlayers(false);
-          socketService.emitPlayerReady();
+          onSelectMode("online"); // This will trigger the loading screen
         }, 1000);
       }
     };
 
     const handlePlayerReady = (data) => {
       console.log("Player ready in GameMenu:", data);
-      // Game should start - transition to game mode
-      setTimeout(() => {
-        setRoomJoined(false);
-        setWaitingForPlayers(false);
-        onSelectMode("online");
-      }, 500);
+      // Both players are ready, game should be running now
+      // Reset states since game has started
+      setRoomJoined(false);
+      setWaitingForPlayers(false);
     };
 
     // Register event listeners
