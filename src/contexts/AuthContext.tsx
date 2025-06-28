@@ -12,6 +12,7 @@ import { SiweMessage } from "siwe";
 import { User, WagmiAuthState, AuthResponse } from "../types/auth";
 import { WagmiAuthService } from "../services/wagmiAuthService";
 import { tokenManager } from "../app/lib/api";
+import { socketService } from "../services/socketService";
 
 interface AuthContextType extends WagmiAuthState {
   login: () => Promise<void>;
@@ -200,6 +201,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           isLoading: false,
           error: null,
         });
+
+        // Connect to socket and emit join-game after successful authentication
+        try {
+          await socketService.connect();
+          socketService.joinGame({
+            userId: authResult.user.id,
+            walletAddress: authResult.user.walletAddress,
+            username: authResult.user.username,
+          });
+        } catch (socketError) {
+          console.error("Socket connection failed:", socketError);
+          // Don't throw here - authentication succeeded, socket is optional
+        }
       } else {
         throw new Error(authResult.message || "Authentication failed");
       }
@@ -246,6 +260,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
+      // Disconnect socket first
+      socketService.disconnect();
+
       // Call logout service (will clear localStorage automatically)
       await WagmiAuthService.logout();
 
@@ -259,6 +276,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.error("Logout failed:", error);
       // Still clear local state even if backend call fails
+      socketService.disconnect();
       tokenManager.removeToken();
       setAuthState({
         isAuthenticated: false,

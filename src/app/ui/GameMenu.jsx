@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 // import GameBackGround from "../assets/GameBackGround.png"; // Not needed in Next.js
 import PixelButton from "./PixelButton";
 import PlayerSelect from "./PlayerSelect";
@@ -10,14 +10,101 @@ import { useReadContract } from "wagmi";
 
 import { useAccount } from "wagmi";
 import CustomConnectButton from "./CustomConnectButton";
+import { useAuth } from "@/contexts/AuthContext";
+import { socketService } from "@/services/socketService";
 
 const GameBackGround = "/GameBackGround.png";
 
 const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const { address, isConnected } = useAccount();
+  const { isAuthenticated } = useAuth();
   const [selectedPlayer, setSelectedPlayer] = useState(1);
   const [showChestModal, setShowChestModal] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
+  const [playerCreated, setPlayerCreated] = useState(false);
+  const [isMatchmaking, setIsMatchmaking] = useState(false);
+  const [roomJoined, setRoomJoined] = useState(false);
+  const [playersInRoom, setPlayersInRoom] = useState(0);
+  const [waitingForPlayers, setWaitingForPlayers] = useState(false);
+
+  // Listen for player-created event and check initial state
+  useEffect(() => {
+    // Check if player is already created when component mounts
+    if (isAuthenticated && socketService.isSocketConnected()) {
+      setPlayerCreated(socketService.isPlayerCreated());
+      setIsMatchmaking(socketService.isInMatchmaking());
+      setRoomJoined(socketService.isRoomJoined());
+      setPlayersInRoom(socketService.getPlayersInRoom());
+    }
+
+    // Event handlers
+    const handlePlayerCreated = (data) => {
+      console.log("Player created in GameMenu:", data);
+      setPlayerCreated(true);
+    };
+
+    const handleRoomJoined = (data) => {
+      console.log("Room joined in GameMenu:", data);
+      setRoomJoined(true);
+      // Use players array length from backend data
+      const currentPlayers = data.players ? data.players.length : 1;
+      setPlayersInRoom(currentPlayers);
+      setWaitingForPlayers(currentPlayers < 2);
+      setIsMatchmaking(false);
+    };
+
+    const handlePlayerJoinedRoom = (data) => {
+      console.log("Player joined room in GameMenu:", data);
+      // Use players array length from backend data
+      const currentPlayers = data.players
+        ? data.players.length
+        : socketService.getPlayersInRoom();
+      setPlayersInRoom(currentPlayers);
+
+      // If we have 2 players, auto-emit player-ready after a short delay
+      if (currentPlayers >= 2) {
+        setTimeout(() => {
+          setWaitingForPlayers(false);
+          socketService.emitPlayerReady();
+        }, 1000);
+      }
+    };
+
+    const handlePlayerReady = (data) => {
+      console.log("Player ready in GameMenu:", data);
+      // Game should start - transition to game mode
+      setTimeout(() => {
+        setRoomJoined(false);
+        setWaitingForPlayers(false);
+        onSelectMode("online");
+      }, 500);
+    };
+
+    // Register event listeners
+    socketService.on("player-created", handlePlayerCreated);
+    socketService.on("room-joined", handleRoomJoined);
+    socketService.on("player-joined-room", handlePlayerJoinedRoom);
+    socketService.on("player-ready", handlePlayerReady);
+
+    // Cleanup listeners on unmount
+    return () => {
+      socketService.off("player-created", handlePlayerCreated);
+      socketService.off("room-joined", handleRoomJoined);
+      socketService.off("player-joined-room", handlePlayerJoinedRoom);
+      socketService.off("player-ready", handlePlayerReady);
+    };
+  }, [isAuthenticated, onSelectMode]);
+
+  // Reset player created state when user disconnects
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPlayerCreated(false);
+      setIsMatchmaking(false);
+      setRoomJoined(false);
+      setPlayersInRoom(0);
+      setWaitingForPlayers(false);
+    }
+  }, [isAuthenticated]);
 
   const handlePlayerChange = (direction) => {
     if (direction === "next") {
@@ -28,11 +115,29 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   };
 
   const handleOnlineClick = () => {
-    setShowLoader(true);
-    setTimeout(() => {
-      setShowLoader(false);
-      onSelectMode("online");
-    }, 3000);
+    // Prevent multiple clicks
+    if (isMatchmaking || roomJoined) {
+      console.log("Matchmaking already in progress, ignoring click");
+      return;
+    }
+
+    if (socketService.isSocketConnected() && playerCreated) {
+      console.log("Starting matchmaking...");
+      setIsMatchmaking(true);
+      socketService.findMatch({
+        playerId: socketService.getSocket()?.id,
+        selectedPlayer: selectedPlayer,
+      });
+    } else {
+      console.error(
+        "Cannot start matchmaking: socket not connected or player not created"
+      );
+    }
+  };
+
+  const handleCancelMatchmaking = () => {
+    setIsMatchmaking(false);
+    socketService.cancelMatchmaking();
   };
 
   return (
@@ -149,11 +254,18 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           gap: 16,
         }}
       >
-        <div className={`${isConnected ? "block" : "hidden"} mb-4`}>
+        <div
+          className={`${
+            isConnected && playerCreated && !isMatchmaking && !roomJoined
+              ? "block"
+              : "hidden"
+          } mb-4`}
+        >
           <PixelButton
             variant="menu"
             size="hald-custom"
             onClick={handleOnlineClick}
+            disabled={isMatchmaking || roomJoined}
           >
             <span className="flex flex-col items-center w-full leading-tight">
               <span>ENTER GAME</span>
@@ -162,6 +274,21 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
               </span>
             </span>
           </PixelButton>
+        </div>
+
+        {/* Show waiting message when authenticated but player not created yet */}
+        <div
+          className={`${
+            isConnected && isAuthenticated && !playerCreated
+              ? "block"
+              : "hidden"
+          } mb-4`}
+        >
+          <div className="pixel-card rounded-none p-4 text-center bg-blue-900 border-2 border-yellow-400">
+            <span className="text-white font-mono text-sm">
+              Connecting to game server...
+            </span>
+          </div>
         </div>
         <div className="button-row-custom">
           <PixelButton
@@ -188,31 +315,132 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
         <ChestRedeemModal onClose={() => setShowChestModal(false)} />
       )}
 
-      {showLoader && (
+      {/* Matchmaking Modal */}
+      {(isMatchmaking || roomJoined || waitingForPlayers) && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.85)",
+            background: "rgba(0,0,0,0.9)",
             zIndex: 10000,
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <span
+          <div
             style={{
-              color: "#fde047",
-              fontFamily: '"Press Start 2P", monospace',
-              fontSize: 28,
-              letterSpacing: 2,
-              textShadow: "2px 2px 0 #000",
+              background: "#1e293b",
+              border: "4px solid #ffd600",
+              borderRadius: "8px",
+              padding: "32px",
+              textAlign: "center",
+              maxWidth: "500px",
+              width: "90%",
             }}
           >
-            Searching for opponents...
-          </span>
+            <h2
+              style={{
+                color: "#fde047",
+                fontFamily: '"Press Start 2P", monospace',
+                fontSize: "24px",
+                marginBottom: "20px",
+                textShadow: "2px 2px 0 #000",
+              }}
+            >
+              {isMatchmaking && "FINDING MATCH..."}
+              {roomJoined && !waitingForPlayers && "ROOM JOINED!"}
+              {waitingForPlayers && "WAITING FOR PLAYERS"}
+            </h2>
+
+            <div
+              style={{
+                color: "#fff",
+                fontFamily: '"Press Start 2P", monospace',
+                fontSize: "16px",
+                marginBottom: "20px",
+                lineHeight: "1.5",
+              }}
+            >
+              {isMatchmaking && (
+                <>
+                  <div style={{ marginBottom: "10px" }}>
+                    🔍 Searching for opponents...
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                    Please wait while we find a match
+                  </div>
+                </>
+              )}
+
+              {roomJoined && (
+                <>
+                  <div style={{ marginBottom: "10px" }}>
+                    🎮 Players in room: {playersInRoom}/2
+                  </div>
+                  {waitingForPlayers && playersInRoom < 2 && (
+                    <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                      Waiting for another player to join...
+                    </div>
+                  )}
+                  {playersInRoom >= 2 && (
+                    <div style={{ fontSize: "12px", color: "#10b981" }}>
+                      All players ready! Starting game...
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Loading animation */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                marginBottom: "20px",
+              }}
+            >
+              <div
+                style={{
+                  width: "40px",
+                  height: "40px",
+                  border: "4px solid #374151",
+                  borderTop: "4px solid #fde047",
+                  borderRadius: "50%",
+                  animation: "spin 1s linear infinite",
+                }}
+              />
+            </div>
+
+            {/* Cancel button - only show during matchmaking */}
+            {isMatchmaking && (
+              <PixelButton
+                variant="menu"
+                size="large"
+                onClick={handleCancelMatchmaking}
+                style={{
+                  backgroundColor: "#dc2626",
+                  borderColor: "#991b1b",
+                }}
+              >
+                CANCEL
+              </PixelButton>
+            )}
+          </div>
         </div>
       )}
+
+      {/* CSS for loading animation */}
+      <style jsx>{`
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 };
