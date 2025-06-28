@@ -1,5 +1,6 @@
 import { GAME_CONFIG, PIXEL_SPRITE } from "./config.js";
 import { Player } from "./Player.js";
+import { RemotePlayer } from "./RemotePlayer.js";
 import { AIPlayer } from "./AIPlayer.js";
 
 export class GameScene extends Phaser.Scene {
@@ -45,6 +46,7 @@ export class GameScene extends Phaser.Scene {
     this.load.image("pixel", PIXEL_SPRITE);
     this.load.image("player1", "/head-1.png");
     this.load.image("player2", "/head-2.png");
+    this.load.image("ai-head", "/ai-head.png");
     this.load.image("ball", "/ball.png");
     this.load.image("court", "/court.png");
   }
@@ -321,84 +323,64 @@ export class GameScene extends Phaser.Scene {
   }
 
   createPlayers() {
-    this.player1 = new Player(
-      this,
-      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
-      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
-      "PLAYER1",
-      "arrows"
-    );
-
-    // Create Player 2 based on game mode
-    if (this.gameMode === "vsAI") {
-      // Create AI player
+    if (this.gameMode === "online") {
+      // Player 1: Arrow keys, right side, use "player2" image
+      this.player1 = new Player(
+        this,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
+        "PLAYER1",
+        "arrows",
+        "player2" // <-- right side image
+      );
+      // Player 2: Remote placeholder, left side, use "player1" image
+      this.player2 = new RemotePlayer(
+        this,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+        "PLAYER2",
+        "player1" // <-- left side image
+      );
+    } else if (this.gameMode === "vsAI") {
+      // Player 1: WASD, left side, use "player1" image
+      this.player1 = new Player(
+        this,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+        "PLAYER1",
+        "wasd",
+        "player1"
+      );
+      // Player 2: AI, right side, use "ai-head" image
       this.player2 = new AIPlayer(
         this,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
-        "AI"
+        "AI",
+        "ai-head"
       );
-
-      // Set AI difficulty (can be made configurable later)
       this.player2.setDifficulty("medium");
     } else {
-      // Create human Player 2
+      // 2 player local: Player 1 (WASD, left, "player1"), Player 2 (arrows, right, "player2")
+      this.player1 = new Player(
+        this,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+        "PLAYER1",
+        "wasd",
+        "player1"
+      );
       this.player2 = new Player(
         this,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
         "PLAYER2",
-        "wasd"
+        "arrows",
+        "player2"
       );
     }
 
-    // Player collision
     this.physics.add.collider(this.player1.sprite, this.player2.sprite);
-
-    // Control hints based on game mode
-    let controlText = "";
-    if (this.gameMode === "vsAI") {
-      controlText = "Player 1: Arrow Keys + Right Shift (Shoot) | AI Player";
-    } else {
-      controlText =
-        "Player 1: Arrow Keys + Right Shift (Shoot) | Player 2: WASD Keys + Space (Shoot)";
-    }
-
-    this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.UI.CONTROLS_Y,
-        controlText,
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: GAME_CONFIG.UI.FONT_SIZES.CONTROLS,
-          fill: "#ffffff",
-          backgroundColor: "#000000",
-          padding: { x: 8, y: 4 },
-          align: "center",
-        }
-      )
-      .setOrigin(0.5, 0.5);
-
-    // Add powerup bar under the controls text
-    this.powerupBarText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        940,
-        "🌟 Power-ups will appear on the field - touch them with the ball! 🌟",
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "10px",
-          fill: "#ffff00",
-          backgroundColor: "#333333",
-          padding: { x: 8, y: 4 },
-          align: "center",
-          stroke: "#000000",
-          strokeThickness: 1,
-        }
-      )
-      .setOrigin(0.5, 0.5)
-      .setDepth(3000);
   }
 
   createBall() {
