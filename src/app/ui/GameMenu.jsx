@@ -6,6 +6,7 @@ import MetaheadTitle from "./MetaheadTitle";
 import ChestRedeemModal from "./ChestRedeemModal";
 import LevelProgressBar from "./LevelProgressBar";
 import CoinDisplay from "./CoinDisplay";
+import CoinModal from "./CoinModal";
 import { useReadContract } from "wagmi";
 
 import { useAccount } from "wagmi";
@@ -26,6 +27,7 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const [roomJoined, setRoomJoined] = useState(false);
   const [playersInRoom, setPlayersInRoom] = useState(0);
   const [waitingForPlayers, setWaitingForPlayers] = useState(false);
+  const [showCoinTransferModal, setShowCoinTransferModal] = useState(false);
 
   // Listen for player-created event and check initial state
   useEffect(() => {
@@ -234,6 +236,13 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
                 </span>
               </span>
             </PixelButton>
+            <PixelButton
+              variant="menu"
+              size="large"
+              onClick={() => setShowCoinTransferModal(true)}
+            >
+              COIN TRANSFER
+            </PixelButton>
           </div>
         </div>
       </div>
@@ -308,6 +317,30 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           MARKETPLACE
         </PixelButton>
       </div>
+
+      <CoinModal
+        open={showCoinTransferModal}
+        onClose={() => setShowCoinTransferModal(false)}
+      >
+        <span
+          style={{
+            color: "#fde047",
+            fontFamily: '"Press Start 2P", monospace',
+            fontSize: 20,
+            marginBottom: 24,
+            textAlign: "center",
+          }}
+        >
+          Cross-chain coin transfer coming soon!
+        </span>
+        <PixelButton
+          variant="menu"
+          size="half-custom"
+          onClick={() => setShowCoinTransferModal(false)}
+        >
+          CLOSE
+        </PixelButton>
+      </CoinModal>
 
       {showChestModal && (
         <ChestRedeemModal onClose={() => setShowChestModal(false)} />
