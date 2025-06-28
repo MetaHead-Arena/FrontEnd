@@ -43,12 +43,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
+    this.load.image("court", "/court.png");
     this.load.image("pixel", PIXEL_SPRITE);
     this.load.image("player1", "/head-1.png");
     this.load.image("player2", "/head-2.png");
     this.load.image("ai-head", "/ai-head.png");
     this.load.image("ball", "/ball.png");
-    this.load.image("court", "/court.png");
+    this.load.image("left-net", "/left-net.png");
+    this.load.image("right-net", "/right-net.png");
   }
 
   resetGameState() {
@@ -1317,6 +1319,30 @@ export class GameScene extends Phaser.Scene {
       .create(75, goalY + 10, "pixel")
       .setScale(GAME_CONFIG.FIELD.GOAL_WIDTH, GAME_CONFIG.FIELD.GOAL_HEIGHT)
       .refreshBody();
+
+    // After creating leftCrossbar, rightCrossbar, leftGoalZone, rightGoalZone...
+
+    // Left net
+    this.leftNet = this.add
+      .image(
+        75, // x: match your left goal/crossbar x
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y + 55, // y: adjust as needed
+        "left-net"
+      )
+      .setOrigin(0.5, 1) // adjust as needed for your image
+      .setScale(0.91, 0.91) // adjust scale as needed
+      .setDepth(5); // higher than players/ball
+
+    // Right net
+    this.rightNet = this.add
+      .image(
+        GAME_CONFIG.CANVAS_WIDTH - 75, // x: match your right goal/crossbar x
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y + 55, // y: adjust as needed
+        "right-net"
+      )
+      .setOrigin(0.5, 1)
+      .setScale(0.91, 0.91) // adjust scale as needed
+      .setDepth(5); // higher than players/ball
 
     this.rightGoalZone = this.physics.add.staticGroup();
     this.rightGoalZone
