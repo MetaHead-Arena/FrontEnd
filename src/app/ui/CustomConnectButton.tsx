@@ -18,6 +18,13 @@ const CustomConnectButton: React.FC = () => {
     process.env.NEXT_PUBLIC_PROJECT_ID &&
     process.env.NEXT_PUBLIC_PROJECT_ID !== "your_project_id_here";
 
+  // Reset connecting state when wallet disconnects
+  useEffect(() => {
+    if (!isConnected) {
+      setIsConnecting(false);
+    }
+  }, [isConnected]);
+
   // Auto-trigger SIWE authentication when wallet connects
   useEffect(() => {
     const handleAutoAuth = async () => {
@@ -79,12 +86,32 @@ const CustomConnectButton: React.FC = () => {
     }
   };
 
-  const handleDisconnect = () => {
-    setIsConnecting(false);
-    if (hasProjectId) {
-      open({ view: "Account" });
-    } else {
+  const handleDisconnect = async () => {
+    try {
+      setIsConnecting(true); // Show loading state during disconnect
+      console.log("Starting disconnect process...");
+
+      // First, logout from backend (clear cookies)
+      if (isAuthenticated) {
+        console.log("Calling logout to clear backend session...");
+        await logout();
+      }
+
+      // Then disconnect wallet
+      console.log("Disconnecting wallet...");
+      if (hasProjectId) {
+        await open({ view: "Account" });
+      } else {
+        disconnect();
+      }
+
+      console.log("Disconnect process completed");
+    } catch (error) {
+      console.error("Disconnect error:", error);
+      // Force disconnect even if logout fails
       disconnect();
+    } finally {
+      setIsConnecting(false);
     }
   };
 
