@@ -1,6 +1,6 @@
 // API Configuration
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3000";
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
 
 // API Endpoints
 export const API_ENDPOINTS = {
@@ -25,6 +25,55 @@ export const API_ENDPOINTS = {
   },
 } as const;
 
+// Token management utilities
+export const tokenManager = {
+  getToken: (): string | null => {
+    if (typeof window === "undefined") return null;
+    return localStorage.getItem("authToken");
+  },
+
+  setToken: (token: string): void => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("authToken", token);
+  },
+
+  removeToken: (): void => {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem("authToken");
+    localStorage.removeItem("user");
+  },
+
+  getUser: () => {
+    if (typeof window === "undefined") return null;
+    const userStr = localStorage.getItem("user");
+    return userStr ? JSON.parse(userStr) : null;
+  },
+
+  setUser: (user: any): void => {
+    if (typeof window === "undefined") return;
+    localStorage.setItem("user", JSON.stringify(user));
+  },
+
+  isTokenValid: (): boolean => {
+    const token = tokenManager.getToken();
+    if (!token) return false;
+
+    try {
+      // Basic JWT validation - decode payload and check expiry
+      const payload = JSON.parse(atob(token.split(".")[1]));
+      const isExpired = payload.exp * 1000 < Date.now();
+      return !isExpired;
+    } catch {
+      return false;
+    }
+  },
+
+  getAuthHeaders: (): Record<string, string> => {
+    const token = tokenManager.getToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  },
+};
+
 // API Client helper functions
 export const apiClient = {
   get: async (url: string, options?: RequestInit) => {
@@ -32,9 +81,9 @@ export const apiClient = {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
+        ...tokenManager.getAuthHeaders(), // Add Authorization header
         ...options?.headers,
       },
-      credentials: "include", // Include cookies for auth
       ...options,
     });
     return response;
@@ -55,9 +104,9 @@ export const apiClient = {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...tokenManager.getAuthHeaders(), // Add Authorization header
         ...options?.headers,
       },
-      credentials: "include", // Include cookies for auth
       body: data ? JSON.stringify(data) : undefined,
       ...options,
     });
@@ -69,9 +118,9 @@ export const apiClient = {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
+        ...tokenManager.getAuthHeaders(), // Add Authorization header
         ...options?.headers,
       },
-      credentials: "include",
       body: data ? JSON.stringify(data) : undefined,
       ...options,
     });
@@ -83,9 +132,23 @@ export const apiClient = {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
+        ...tokenManager.getAuthHeaders(), // Add Authorization header
         ...options?.headers,
       },
-      credentials: "include",
+      ...options,
+    });
+    return response;
+  },
+
+  // Special method for auth endpoints that don't need tokens
+  postNoAuth: async (url: string, data?: any, options?: RequestInit) => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+      },
+      body: data ? JSON.stringify(data) : undefined,
       ...options,
     });
     return response;

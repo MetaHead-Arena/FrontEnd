@@ -1,4 +1,4 @@
-import { API_ENDPOINTS, apiClient } from "../app/lib/api";
+import { API_ENDPOINTS, apiClient, tokenManager } from "../app/lib/api";
 import {
   NonceResponse,
   AuthResponse,
@@ -8,7 +8,7 @@ import {
 
 /**
  * Wagmi-optimized SIWE Authentication Service
- * Provides clean API layer for authentication operations
+ * Provides clean API layer for authentication operations using localStorage tokens
  */
 export class WagmiAuthService {
   /**
@@ -41,17 +41,14 @@ export class WagmiAuthService {
         // Note: No nonce field - backend will generate it
       };
 
-      console.log("Nonce request data:", requestData);
-
-      // Use POST for nonce generation (most common SIWE pattern)
-      const response = await apiClient.post(
+      // Use POST for nonce generation (no auth needed)
+      const response = await apiClient.postNoAuth(
         API_ENDPOINTS.auth.nonce,
         requestData
       );
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Nonce request failed:", errorText);
         throw new Error(
           `Failed to get nonce: ${response.status} - ${errorText}`
         );
@@ -64,7 +61,6 @@ export class WagmiAuthService {
         throw new Error("Invalid nonce response from server");
       }
 
-      console.log("Received nonce:", nonce);
       return nonce;
     } catch (error) {
       console.error("Nonce generation failed:", error);
@@ -107,7 +103,7 @@ export class WagmiAuthService {
   }
 
   /**
-   * Verify SIWE signature with backend
+   * Verify SIWE signature with backend and store token
    * @param message - The SIWE message that was signed
    * @param signature - The signature from wallet
    * @param walletAddress - The wallet address that signed
@@ -125,22 +121,25 @@ export class WagmiAuthService {
         signature,
       };
 
-      console.log("Verify request data:", verifyData);
-
-      const response = await apiClient.post(
+      const response = await apiClient.postNoAuth(
         API_ENDPOINTS.auth.verify,
         verifyData
       );
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.message || `Verification failed: ${response.status}`
-        );
+        let errorText = "";
+        try {
+          const errorData = await response.json();
+          errorText =
+            errorData.message || errorData.error || JSON.stringify(errorData);
+        } catch {
+          errorText = await response.text();
+        }
+
+        throw new Error(errorText || `Verification failed: ${response.status}`);
       }
 
       const result = await response.json();
-      console.log("Verify response:", result);
 
       // Transform backend response to match frontend AuthResponse interface
       const authResult: AuthResponse = {
@@ -157,13 +156,19 @@ export class WagmiAuthService {
             }
           : undefined,
         message: result.message,
-        token: undefined, // Backend uses httpOnly cookies, no token in response
+        token: result.data?.token, // Extract token from response
       };
 
       if (!authResult.success) {
         throw new Error(
           authResult.message || "Authentication verification failed"
         );
+      }
+
+      // Store token and user data in localStorage
+      if (authResult.token && authResult.user) {
+        tokenManager.setToken(authResult.token);
+        tokenManager.setUser(authResult.user);
       }
 
       return authResult;
@@ -174,11 +179,12 @@ export class WagmiAuthService {
   }
 
   /**
-   * Logout user and invalidate session
+   * Logout user and clear localStorage
    * @returns Promise<void>
    */
   static async logout(): Promise<void> {
     try {
+      // Call backend logout endpoint (optional - since we're using tokens)
       const response = await apiClient.post(API_ENDPOINTS.auth.logout);
 
       // Don't throw on logout errors - always clear local state
@@ -190,6 +196,9 @@ export class WagmiAuthService {
     } catch (error) {
       console.warn("Logout request failed:", error);
       // Don't throw - logout should always succeed locally
+    } finally {
+      // Always clear localStorage
+      tokenManager.removeToken();
     }
   }
 
@@ -265,11 +274,37 @@ export class WagmiAuthService {
         throw new Error(authResult.message || "Token refresh failed");
       }
 
+      // Update token if new one is provided
+      if (authResult.token) {
+        tokenManager.setToken(authResult.token);
+      }
+
+      // Update user if provided
+      if (authResult.user) {
+        tokenManager.setUser(authResult.user);
+      }
+
       return authResult;
     } catch (error) {
       console.error("Token refresh failed:", error);
       throw error;
     }
+  }
+
+  /**
+   * Check if user is currently authenticated (has valid token)
+   * @returns boolean - Authentication status
+   */
+  static isAuthenticated(): boolean {
+    return tokenManager.isTokenValid();
+  }
+
+  /**
+   * Get current user from localStorage
+   * @returns User | null - Current user data
+   */
+  static getCurrentUserFromStorage(): User | null {
+    return tokenManager.getUser();
   }
 }
 
@@ -282,4 +317,6 @@ export const {
   getCurrentUser,
   getUserByWallet,
   refreshAuth,
+  isAuthenticated,
+  getCurrentUserFromStorage,
 } = WagmiAuthService;

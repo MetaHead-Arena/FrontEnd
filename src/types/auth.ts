@@ -32,7 +32,7 @@ export interface AuthResponse {
   success: boolean;
   user?: User;
   message?: string;
-  token?: string;
+  token?: string; // JWT token returned from backend
   error?: string;
 }
 
@@ -53,4 +53,11 @@ export interface VerifyRequest {
   message: string;
   signature: string;
   walletAddress: string;
+}
+
+// Additional type for token management
+export interface TokenData {
+  token: string;
+  user: User;
+  expiresAt: number; // Unix timestamp
 }

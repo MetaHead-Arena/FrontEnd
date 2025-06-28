@@ -11,6 +11,7 @@ import { useAccount, useSignMessage, useChainId } from "wagmi";
 import { SiweMessage } from "siwe";
 import { User, WagmiAuthState, AuthResponse } from "../types/auth";
 import { WagmiAuthService } from "../services/wagmiAuthService";
+import { tokenManager } from "../app/lib/api";
 
 interface AuthContextType extends WagmiAuthState {
   login: () => Promise<void>;
@@ -44,17 +45,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     error: null,
   });
 
-  // Debug logging for Wagmi state
-  useEffect(() => {
-    console.log("Wagmi state:", { address, isConnected, chainId });
-  }, [address, isConnected, chainId]);
+  // Add a ref to track if login is in progress to prevent concurrent attempts
+  const loginInProgress = React.useRef(false);
 
   // Check authentication status on mount and when wallet changes
   useEffect(() => {
-    checkAuthStatus();
+    // Only check auth status if wallet is connected
+    // This prevents the loop when user disconnects wallet
+    if (isConnected && address) {
+      checkAuthStatus();
+    } else if (!isConnected) {
+      // If wallet is disconnected, immediately clear auth state
+      setAuthState({
+        isAuthenticated: false,
+        user: null,
+        isLoading: false,
+        error: null,
+      });
+    }
   }, [address, isConnected]);
 
-  // Auto logout when wallet disconnects
+  // Auto logout when wallet disconnects - simplified
   useEffect(() => {
     if (!isConnected && authState.isAuthenticated) {
       // Clear auth state when wallet disconnects
@@ -71,8 +82,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
 
-      // With httpOnly cookies, we don't check local tokens
-      // Instead, we try to get user data from backend (cookies will be sent automatically)
+      // Check localStorage for valid token instead of making API calls
       if (!address) {
         setAuthState({
           isAuthenticated: false,
@@ -83,23 +93,37 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
 
-      // Try to get user data - if cookies are valid, this will work
-      const userData: User = await WagmiAuthService.getUserByWallet(address);
+      // Check if we have a valid token and user data in localStorage
+      const isTokenValid = tokenManager.isTokenValid();
+      const userData = tokenManager.getUser();
 
-      setAuthState({
-        isAuthenticated: true,
-        user: userData,
-        isLoading: false,
-        error: null,
-      });
+      if (isTokenValid && userData && userData.walletAddress === address) {
+        // Token is valid and matches current wallet
+        setAuthState({
+          isAuthenticated: true,
+          user: userData,
+          isLoading: false,
+          error: null,
+        });
+      } else {
+        // No valid token or wallet mismatch - clear state
+        tokenManager.removeToken();
+        setAuthState({
+          isAuthenticated: false,
+          user: null,
+          isLoading: false,
+          error: null,
+        });
+      }
     } catch (error) {
       console.error("Auth check failed:", error);
-      // If request fails, user is not authenticated
+      // If anything fails, clear tokens and mark as unauthenticated
+      tokenManager.removeToken();
       setAuthState({
         isAuthenticated: false,
         user: null,
         isLoading: false,
-        error: null, // Don't show error for failed auth check
+        error: null,
       });
     }
   }, [address]);
@@ -109,7 +133,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error("Wallet not connected");
     }
 
+    // Prevent concurrent login attempts
+    if (loginInProgress.current) {
+      return;
+    }
+
     try {
+      loginInProgress.current = true;
       setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       // Step 1: Get nonce from backend using service
@@ -130,13 +160,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error("Chain ID is not available");
       }
 
-      console.log("SIWE message creation:", {
-        domain,
-        address,
-        chainId,
-        nonce,
-      });
-
       const siweMessage = new SiweMessage({
         domain: domain,
         address: address,
@@ -149,14 +172,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       });
 
       const messageToSign = siweMessage.prepareMessage();
-      console.log("Message to sign:", messageToSign);
+
+      // Verify the nonce is correctly included in the message
+      if (!messageToSign.includes(nonce)) {
+        throw new Error(
+          `Nonce mismatch: message doesn't contain expected nonce ${nonce}`
+        );
+      }
 
       // Step 3: Sign the message with Wagmi
       const signature = await signMessageAsync({
         message: messageToSign,
       });
 
-      // Step 4: Verify signature with backend using service
+      // Step 4: Verify signature with backend using service (this will store token automatically)
       const authResult: AuthResponse = await WagmiAuthService.verifySignature(
         messageToSign,
         signature,
@@ -164,8 +193,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       );
 
       if (authResult.success && authResult.user) {
-        // Backend handles auth token in httpOnly cookies automatically
-        // No need to store tokens on frontend
+        // Token is automatically stored by WagmiAuthService.verifySignature
         setAuthState({
           isAuthenticated: true,
           user: authResult.user,
@@ -177,12 +205,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     } catch (error: any) {
       console.error("Login failed:", error);
-      setAuthState((prev) => ({
-        ...prev,
-        isLoading: false,
-        error: error.message || "Login failed",
-      }));
-      throw error;
+
+      // Check if the error is due to user cancellation/rejection
+      const isUserCancellation =
+        error?.code === 4001 || // MetaMask user rejection error code
+        error?.code === "ACTION_REJECTED" ||
+        error?.message?.toLowerCase().includes("user rejected") ||
+        error?.message?.toLowerCase().includes("user denied") ||
+        error?.message?.toLowerCase().includes("user cancelled") ||
+        error?.message?.toLowerCase().includes("cancelled by user") ||
+        error?.message?.toLowerCase().includes("signature denied") ||
+        error?.message?.toLowerCase().includes("transaction rejected");
+
+      if (isUserCancellation) {
+        // If user cancelled, mark it as a cancellation instead of error
+        setAuthState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: "CANCELLED_BY_USER", // Special error code for cancellation
+        }));
+        // Create a custom error to indicate user cancellation
+        const cancellationError = new Error("User cancelled authentication");
+        (cancellationError as any).code = "USER_CANCELLED";
+        throw cancellationError;
+      } else {
+        // For other errors, keep the original behavior
+        setAuthState((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: error.message || "Login failed",
+        }));
+        throw error;
+      }
+    } finally {
+      loginInProgress.current = false;
     }
   }, [address, isConnected, chainId, signMessageAsync]);
 
@@ -190,7 +246,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
-      // Call logout endpoint using service (will clear httpOnly cookies)
+      // Call logout service (will clear localStorage automatically)
       await WagmiAuthService.logout();
 
       // Clear local auth state
@@ -203,6 +259,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } catch (error) {
       console.error("Logout failed:", error);
       // Still clear local state even if backend call fails
+      tokenManager.removeToken();
       setAuthState({
         isAuthenticated: false,
         user: null,
@@ -214,10 +271,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const refreshAuth = useCallback(async () => {
     try {
-      // With httpOnly cookies, we just re-check auth status
-      await checkAuthStatus();
+      // For token-based auth, we can try to refresh the token
+      const authResult = await WagmiAuthService.refreshAuth();
+
+      if (authResult.success && authResult.user) {
+        setAuthState({
+          isAuthenticated: true,
+          user: authResult.user,
+          isLoading: false,
+          error: null,
+        });
+      } else {
+        throw new Error("Token refresh failed");
+      }
     } catch (error) {
       console.error("Auth refresh failed:", error);
+      // If refresh fails, clear everything
+      tokenManager.removeToken();
       setAuthState({
         isAuthenticated: false,
         user: null,
@@ -225,7 +295,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         error: null,
       });
     }
-  }, [checkAuthStatus]);
+  }, []);
 
   const contextValue: AuthContextType = {
     ...authState,

@@ -12,6 +12,8 @@ const CustomConnectButton: React.FC = () => {
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [hasExplicitlyDisconnected, setHasExplicitlyDisconnected] =
+    useState(false);
 
   // Check if we have project ID configured
   const hasProjectId =
@@ -25,7 +27,16 @@ const CustomConnectButton: React.FC = () => {
     }
   }, [isConnected]);
 
-  // Auto-trigger SIWE authentication when wallet connects
+  // Reset explicit disconnect flag when wallet connects for the first time
+  useEffect(() => {
+    if (isConnected && hasExplicitlyDisconnected) {
+      // Only reset the flag if user manually reconnects
+      // This prevents auto-auth after explicit disconnect
+      setHasExplicitlyDisconnected(false);
+    }
+  }, [isConnected, hasExplicitlyDisconnected]);
+
+  // Auto-trigger SIWE authentication when wallet connects (but not after explicit disconnect)
   useEffect(() => {
     const handleAutoAuth = async () => {
       if (
@@ -33,14 +44,28 @@ const CustomConnectButton: React.FC = () => {
         !isAuthenticated &&
         !isLoading &&
         address &&
-        !isConnecting
+        !isConnecting &&
+        !hasExplicitlyDisconnected // ⭐ Don't auto-auth after explicit disconnect
       ) {
         try {
           setIsConnecting(true);
-          console.log("Auto-triggering SIWE authentication...");
           await login();
-        } catch (error) {
+        } catch (error: any) {
           console.error("Auto-authentication failed:", error);
+
+          // Check if user cancelled authentication
+          if (
+            error?.code === "USER_CANCELLED" ||
+            error?.message?.includes("User cancelled authentication")
+          ) {
+            // User cancelled authentication - disconnect wallet and return to connect state
+            console.log(
+              "User cancelled authentication, disconnecting wallet..."
+            );
+            disconnect();
+            setHasExplicitlyDisconnected(true);
+          }
+          // For other errors, let the component handle them in its error state
         } finally {
           setIsConnecting(false);
         }
@@ -50,7 +75,16 @@ const CustomConnectButton: React.FC = () => {
     // Small delay to ensure wallet connection is fully established
     const timer = setTimeout(handleAutoAuth, 500);
     return () => clearTimeout(timer);
-  }, [isConnected, isAuthenticated, isLoading, address, login, isConnecting]);
+  }, [
+    isConnected,
+    isAuthenticated,
+    isLoading,
+    address,
+    login,
+    disconnect,
+    isConnecting,
+    hasExplicitlyDisconnected,
+  ]);
 
   const handleConnectWallet = async () => {
     try {
@@ -89,23 +123,16 @@ const CustomConnectButton: React.FC = () => {
   const handleDisconnect = async () => {
     try {
       setIsConnecting(true); // Show loading state during disconnect
-      console.log("Starting disconnect process...");
+      setHasExplicitlyDisconnected(true); // ⭐ Mark as explicitly disconnected
 
-      // First, logout from backend (clear cookies)
+      // First, logout from backend (clear localStorage)
       if (isAuthenticated) {
-        console.log("Calling logout to clear backend session...");
         await logout();
       }
 
-      // Then disconnect wallet
-      console.log("Disconnecting wallet...");
-      if (hasProjectId) {
-        await open({ view: "Account" });
-      } else {
-        disconnect();
-      }
-
-      console.log("Disconnect process completed");
+      // Then disconnect wallet using wagmi disconnect function
+      // This works regardless of whether AppKit is used or not
+      disconnect();
     } catch (error) {
       console.error("Disconnect error:", error);
       // Force disconnect even if logout fails
@@ -135,7 +162,9 @@ const CustomConnectButton: React.FC = () => {
   if (!isConnected) {
     return (
       <div className="flex flex-col gap-2 w-full">
-        {error && <div className="text-xs text-red-600 px-2">{error}</div>}
+        {error && error !== "CANCELLED_BY_USER" && (
+          <div className="text-xs text-red-600 px-2">{error}</div>
+        )}
         <Button
           onClick={handleConnectWallet}
           variant="customBlue"
@@ -165,7 +194,12 @@ const CustomConnectButton: React.FC = () => {
   }
 
   // Connected but authentication failed - show error and disconnect
-  if (isConnected && !isAuthenticated && error) {
+  if (
+    isConnected &&
+    !isAuthenticated &&
+    error &&
+    error !== "CANCELLED_BY_USER"
+  ) {
     return (
       <div className="flex flex-col gap-2 w-full">
         <div className="text-xs text-red-600 px-2">
