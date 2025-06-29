@@ -14,9 +14,10 @@ export class WagmiAuthService {
   /**
    * Generate nonce for SIWE message
    * @param walletAddress - The connected wallet address
+   * @param chainId - The chain ID (defaults to Avalanche Fuji)
    * @returns Promise<string> - The nonce string
    */
-  static async generateNonce(walletAddress: string): Promise<string> {
+  static async generateNonce(walletAddress: string, chainId: number = 43113): Promise<string> {
     try {
       // Get domain and origin for the nonce request
       const domain =
@@ -35,7 +36,7 @@ export class WagmiAuthService {
         address: walletAddress,
         uri: origin,
         version: "1",
-        chainId: 43113, // Avalanche Fuji - update if needed
+        chainId: chainId, // Use the provided chainId
         statement: "Sign in to HeadBall Web3 Game",
         issuedAt: new Date().toISOString(),
         // Note: No nonce field - backend will generate it

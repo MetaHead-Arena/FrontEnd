@@ -3,7 +3,7 @@
 import { wagmiAdapter, projectId } from "../config";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createAppKit } from "@reown/appkit/react";
-import { avalancheFuji } from "@reown/appkit/networks";
+import { avalancheFuji, sepolia } from "@reown/appkit/networks";
 import React, { type ReactNode } from "react";
 import { cookieToInitialState, WagmiProvider } from "wagmi";
 import { AuthProvider } from "../src/contexts/AuthContext";
@@ -34,7 +34,7 @@ if (projectId) {
   createAppKit({
     adapters: [wagmiAdapter],
     projectId,
-    networks: [avalancheFuji],
+    networks: [avalancheFuji, sepolia],
     defaultNetwork: avalancheFuji,
     metadata: metadata,
     features: {
@@ -42,8 +42,12 @@ if (projectId) {
       email: false,
       socials: false,
       onramp: false,
+      // Disable additional features that might cause 404 errors
+      walletConnect: false,
+      coinbase: false,
+      rainbow: false,
     },
-    // MetaMask-first configuration
+    // MetaMask-only configuration
     featuredWalletIds: [
       "c57ca95b47569778a828d19178114f4db188b89b763c899ba0be274e97267d96", // MetaMask
     ],
@@ -52,6 +56,12 @@ if (projectId) {
       "--w3m-font-family": "monospace",
       "--w3m-border-radius-master": "4px",
     },
+    // Minimal configuration to avoid 404 errors
+    walletConnectVersion: 2,
+    enableAnalytics: false,
+    enableOnramp: false,
+    enableEmail: false,
+    enableSocials: false,
   });
 }
 

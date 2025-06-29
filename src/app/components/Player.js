@@ -67,8 +67,37 @@ export class Player {
     this.shootCooldown = 0;
     this.lastShootTime = 0;
 
+    // Online multiplayer state
+    this.isOnlinePlayer = scene.gameMode === "online";
+    this.socketService = null;
+    this.playerPosition = null;
+
+    // Initialize socket service for online games
+    if (this.isOnlinePlayer) {
+      this.initializeSocketService();
+    }
+
     // Setup collisions
     this.setupCollisions();
+  }
+
+  async initializeSocketService() {
+    try {
+      const { socketService } = await import("../../services/socketService");
+      this.socketService = socketService;
+
+      // Get player position from global variable
+      if (typeof window !== "undefined" && window.__HEADBALL_PLAYER_POSITION) {
+        this.playerPosition = window.__HEADBALL_PLAYER_POSITION;
+      }
+
+      console.log(
+        "Player socket service initialized for position:",
+        this.playerPosition
+      );
+    } catch (error) {
+      console.error("Failed to initialize socket service for player:", error);
+    }
   }
 
   setupCollisions() {
@@ -100,6 +129,8 @@ export class Player {
     } else if (this.controls === "wasd") {
       this.handleWASDControls();
     }
+
+    // Position sending is now handled in GameScene update loop for better performance
   }
 
   handleArrowControls() {
@@ -109,17 +140,25 @@ export class Player {
     const currentSpeed = this.getCurrentSpeed();
     if (cursors.left.isDown) {
       this.sprite.setVelocityX(-currentSpeed);
+      this.sendInput("move-left", { pressed: true });
     } else if (cursors.right.isDown) {
       this.sprite.setVelocityX(currentSpeed);
+      this.sendInput("move-right", { pressed: true });
+    } else {
+      this.sprite.setVelocityX(0);
+      this.sendInput("move-left", { pressed: false });
+      this.sendInput("move-right", { pressed: false });
     }
 
     if (cursors.up.isDown && this.isOnGround) {
       this.sprite.setVelocityY(this.getCurrentJumpVelocity());
       this.isOnGround = false;
+      this.sendInput("jump", { pressed: true });
     }
 
     if (rightShift && rightShift.isDown && this.canShoot()) {
       this.shoot();
+      this.sendInput("kick", { pressed: true });
     }
   }
 
@@ -130,18 +169,64 @@ export class Player {
     const currentSpeed = this.getCurrentSpeed();
     if (wasd.A.isDown) {
       this.sprite.setVelocityX(-currentSpeed);
+      this.sendInput("move-left", { pressed: true });
     } else if (wasd.D.isDown) {
       this.sprite.setVelocityX(currentSpeed);
+      this.sendInput("move-right", { pressed: true });
+    } else {
+      this.sprite.setVelocityX(0);
+      this.sendInput("move-left", { pressed: false });
+      this.sendInput("move-right", { pressed: false });
     }
 
     if (wasd.W.isDown && this.isOnGround) {
       this.sprite.setVelocityY(this.getCurrentJumpVelocity());
       this.isOnGround = false;
+      this.sendInput("jump", { pressed: true });
     }
 
     if (space && space.isDown && this.canShoot()) {
       this.shoot();
+      this.sendInput("kick", { pressed: true });
     }
+  }
+
+  sendInput(action, data) {
+    if (this.isOnlinePlayer && this.socketService && this.scene.gameStarted) {
+      this.socketService.sendInput(action, data);
+    }
+  }
+
+  sendPlayerPosition() {
+    if (
+      this.isOnlinePlayer &&
+      this.socketService &&
+      this.playerPosition &&
+      this.scene.gameStarted
+    ) {
+      // Throttle position updates to every 50ms (20 times per second)
+      const now = Date.now();
+      if (!this.lastPositionSend || now - this.lastPositionSend > 50) {
+        const playerData = {
+          x: this.sprite.x,
+          y: this.sprite.y,
+          velocityX: this.sprite.body.velocity.x,
+          velocityY: this.sprite.body.velocity.y,
+          direction: this.getDirection(),
+          isOnGround: this.isOnGround,
+        };
+
+        console.log(`Sending position for ${this.playerPosition}:`, playerData);
+        this.socketService.sendPlayerPosition(this.playerPosition, playerData);
+        this.lastPositionSend = now;
+      }
+    }
+  }
+
+  getDirection() {
+    if (this.sprite.body.velocity.x < 0) return "left";
+    if (this.sprite.body.velocity.x > 0) return "right";
+    return "idle";
   }
 
   updateCurrentAttributes() {
@@ -198,110 +283,88 @@ export class Player {
     );
   }
 
-  canShoot() {
-    const currentTime = this.scene.time.now;
-    return (
-      currentTime - this.lastShootTime >= GAME_CONFIG.PLAYER.SHOOT_COOLDOWN
-    );
-  }
-
   shoot() {
-    if (!this.canShoot()) return false;
+    const now = Date.now();
+    if (now - this.lastShootTime < this.shootCooldown) return;
 
     this.isShooting = true;
-    this.lastShootTime = this.scene.time.now;
+    this.lastShootTime = now;
 
-    this.scene.time.delayedCall(100, () => {
+    // Reset shooting state after a short delay
+    this.scene.time.delayedCall(200, () => {
       this.isShooting = false;
     });
-
-    return true;
   }
 
   isCurrentlyShooting() {
     return this.isShooting;
   }
 
-  applyPowerup(type) {
-    if (this.activePowerups[type]) {
-      this.scene.time.removeEvent(this.activePowerups[type].timer);
-    }
+  canShoot() {
+    const now = Date.now();
+    return now - this.lastShootTime >= this.shootCooldown;
+  }
 
-    this.activePowerups[type] = {
-      timer: this.scene.time.delayedCall(GAME_CONFIG.POWERUPS.DURATION, () => {
-        this.removePowerup(type);
-      }),
-    };
+  applyPowerup(type) {
+    const powerupConfig = GAME_CONFIG.POWERUPS.TYPES[type];
+    if (!powerupConfig) return;
+
+    this.activePowerups[type] = true;
+
+    // Remove powerup after duration
+    this.scene.time.delayedCall(powerupConfig.duration, () => {
+      this.removePowerup(type);
+    });
 
     this.updatePowerupIndicator();
-
-    if (this.scene.updatePlayerStatsDisplay) {
-      this.scene.updatePlayerStatsDisplay();
-    }
   }
 
   removePowerup(type) {
-    if (this.activePowerups[type]) {
-      this.scene.time.removeEvent(this.activePowerups[type].timer);
-      delete this.activePowerups[type];
-      this.updatePowerupIndicator();
-
-      if (this.scene.updatePlayerStatsDisplay) {
-        this.scene.updatePlayerStatsDisplay();
-      }
-    }
+    delete this.activePowerups[type];
+    this.updatePowerupIndicator();
   }
 
   updatePowerupIndicator() {
     if (this.basePowerupIndicator) {
       this.basePowerupIndicator.destroy();
-      this.basePowerupIndicator = null;
     }
 
-    const activePowerupTypes = Object.keys(this.activePowerups);
-    if (activePowerupTypes.length > 0) {
-      const offsetY = -40 * this.attributes.size;
+    const activePowerups = Object.keys(this.activePowerups);
+    if (activePowerups.length === 0) return;
 
-      this.basePowerupIndicator = this.scene.add.circle(
-        this.sprite.x,
-        this.sprite.y + offsetY,
-        30 * this.attributes.size,
-        0xffffff,
-        0.3
-      );
-      this.basePowerupIndicator.setDepth(500);
+    const powerupText = activePowerups
+      .map((type) => GAME_CONFIG.POWERUPS.TYPES[type].icon)
+      .join(" ");
 
-      this.scene.tweens.add({
-        targets: this.basePowerupIndicator,
-        alpha: 0.1,
-        duration: 500,
-        yoyo: true,
-        repeat: -1,
-      });
-    }
+    this.basePowerupIndicator = this.scene.add.text(
+      this.sprite.x,
+      this.sprite.y - 80,
+      powerupText,
+      {
+        fontFamily: '"Press Start 2P"',
+        fontSize: "16px",
+        fill: "#ffff00",
+        stroke: "#000000",
+        strokeThickness: 2,
+      }
+    );
+    this.basePowerupIndicator.setOrigin(0.5, 0.5);
+    this.basePowerupIndicator.setDepth(1000);
   }
 
   updatePowerupIndicatorPosition() {
     if (this.basePowerupIndicator) {
-      const offsetY = -40 * this.attributes.size;
-      this.basePowerupIndicator.setPosition(
-        this.sprite.x,
-        this.sprite.y + offsetY
-      );
+      this.basePowerupIndicator.x = this.sprite.x;
+      this.basePowerupIndicator.y = this.sprite.y - 80;
     }
   }
 
   destroy() {
-    Object.values(this.activePowerups).forEach((powerup) => {
-      if (powerup.timer) {
-        this.scene.time.removeEvent(powerup.timer);
-      }
-    });
-
     if (this.basePowerupIndicator) {
       this.basePowerupIndicator.destroy();
     }
-
-    this.sprite.destroy();
+    if (this.sprite) {
+      this.sprite.destroy();
+    }
   }
 }

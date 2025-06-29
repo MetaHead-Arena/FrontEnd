@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useAppKit } from "@reown/appkit/react";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import { Button } from "@/shared/Button";
@@ -14,6 +14,12 @@ const CustomConnectButton: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [hasExplicitlyDisconnected, setHasExplicitlyDisconnected] =
     useState(false);
+
+  // Store login and disconnect in refs to avoid dependency issues
+  const loginRef = useRef(login);
+  const disconnectRef = useRef(disconnect);
+  loginRef.current = login;
+  disconnectRef.current = disconnect;
 
   // Check if we have project ID configured
   const hasProjectId =
@@ -38,6 +44,15 @@ const CustomConnectButton: React.FC = () => {
 
   // Auto-trigger SIWE authentication when wallet connects (but not after explicit disconnect)
   useEffect(() => {
+    console.log("CustomConnectButton useEffect triggered", {
+      isConnected,
+      isAuthenticated,
+      isLoading,
+      address: address?.slice(0, 6) + "...",
+      isConnecting,
+      hasExplicitlyDisconnected,
+    });
+
     const handleAutoAuth = async () => {
       if (
         isConnected &&
@@ -49,7 +64,7 @@ const CustomConnectButton: React.FC = () => {
       ) {
         try {
           setIsConnecting(true);
-          await login();
+          await loginRef.current();
         } catch (error: any) {
           console.error("Auto-authentication failed:", error);
 
@@ -62,7 +77,7 @@ const CustomConnectButton: React.FC = () => {
             console.log(
               "User cancelled authentication, disconnecting wallet..."
             );
-            disconnect();
+            disconnectRef.current();
             setHasExplicitlyDisconnected(true);
           }
           // For other errors, let the component handle them in its error state
@@ -80,11 +95,9 @@ const CustomConnectButton: React.FC = () => {
     isAuthenticated,
     isLoading,
     address,
-    login,
-    disconnect,
     isConnecting,
     hasExplicitlyDisconnected,
-  ]);
+  ]); // Removed login and disconnect from dependencies
 
   const handleConnectWallet = async () => {
     try {

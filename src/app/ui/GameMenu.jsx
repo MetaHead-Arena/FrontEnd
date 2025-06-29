@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 // import GameBackGround from "../assets/GameBackGround.png"; // Not needed in Next.js
 import PixelButton from "./PixelButton";
 import PlayerSelect from "./PlayerSelect";
@@ -7,6 +7,7 @@ import ChestRedeemModal from "./ChestRedeemModal";
 import LevelProgressBar from "./LevelProgressBar";
 import CoinDisplay from "./CoinDisplay";
 import CoinModal from "./CoinModal";
+import NetworkSwitcher from "./NetworkSwitcher";
 import { useReadContract } from "wagmi";
 
 import { useAccount } from "wagmi";
@@ -27,7 +28,18 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const [roomJoined, setRoomJoined] = useState(false);
   const [playersInRoom, setPlayersInRoom] = useState(0);
   const [waitingForPlayers, setWaitingForPlayers] = useState(false);
+  const [bothPlayersReady, setBothPlayersReady] = useState(false);
+  const [localPlayerReady, setLocalPlayerReady] = useState(false);
+  const [remotePlayerReady, setRemotePlayerReady] = useState(false);
   const [showCoinTransferModal, setShowCoinTransferModal] = useState(false);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+  const [connectionHealth, setConnectionHealth] = useState(null);
+  const [gameLoading, setGameLoading] = useState(false);
+  const readyPlayersRef = useRef(new Set());
+
+  // Store onSelectMode in a ref to avoid dependency issues
+  const onSelectModeRef = useRef(onSelectMode);
+  onSelectModeRef.current = onSelectMode;
 
   // Listen for player-created event and check initial state
   useEffect(() => {
@@ -53,6 +65,28 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       setPlayersInRoom(currentPlayers);
       setWaitingForPlayers(currentPlayers < 2);
       setIsMatchmaking(false);
+
+      // Store room data for position assignment
+      if (typeof window !== "undefined") {
+        window.__HEADBALL_ROOM_DATA = data;
+        console.log("Stored room data for position assignment:", data);
+
+        // Determine player position from server data
+        const socketId = socketService.getSocket()?.id;
+        if (data.players && Array.isArray(data.players) && socketId) {
+          const thisPlayer = data.players.find(
+            (player) =>
+              player.socketId === socketId ||
+              player.id === socketId ||
+              player.playerId === socketId
+          );
+
+          if (thisPlayer) {
+            window.__HEADBALL_PLAYER_POSITION = thisPlayer.position;
+            console.log("Player position from server:", thisPlayer.position);
+          }
+        }
+      }
     };
 
     const handlePlayerJoinedRoom = (data) => {
@@ -63,21 +97,71 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
         : socketService.getPlayersInRoom();
       setPlayersInRoom(currentPlayers);
 
-      // If we have 2 players, start the game (loading screen will handle player-ready)
+      // Update stored room data
+      if (typeof window !== "undefined") {
+        window.__HEADBALL_ROOM_DATA = data;
+        console.log("Updated room data:", data);
+
+        // Update player position from server data
+        const socketId = socketService.getSocket()?.id;
+        if (data.players && Array.isArray(data.players) && socketId) {
+          const thisPlayer = data.players.find(
+            (player) =>
+              player.socketId === socketId ||
+              player.id === socketId ||
+              player.playerId === socketId
+          );
+
+          if (thisPlayer) {
+            window.__HEADBALL_PLAYER_POSITION = thisPlayer.position;
+            console.log(
+              "Updated player position from server:",
+              thisPlayer.position
+            );
+          }
+        }
+      }
+
+      // If we have 2 players, show ready button instead of auto-starting
       if (currentPlayers >= 2) {
-        setTimeout(() => {
-          setWaitingForPlayers(false);
-          onSelectMode("online"); // This will trigger the loading screen
-        }, 1000);
+        console.log("Two players in room, showing ready button...");
+        setWaitingForPlayers(false);
+        // Don't auto-start, let players click ready
       }
     };
 
     const handlePlayerReady = (data) => {
       console.log("Player ready in GameMenu:", data);
-      // Both players are ready, game should be running now
-      // Reset states since game has started
-      setRoomJoined(false);
-      setWaitingForPlayers(false);
+
+      // Check if this is the local player or remote player
+      const socketId = socketService.getSocket()?.id;
+      const playerId = data.socketId || data.playerId;
+
+      if (playerId === socketId) {
+        // Local player is ready
+        setLocalPlayerReady(true);
+        readyPlayersRef.current.add(playerId);
+        console.log("Local player marked as ready");
+      } else {
+        // Remote player is ready
+        setRemotePlayerReady(true);
+        readyPlayersRef.current.add(playerId);
+        console.log("Remote player marked as ready");
+      }
+
+      // Check if both players are ready
+      // Use the data from the server if available, otherwise check our tracking
+      if (data.allPlayersReady || readyPlayersRef.current.size >= 2) {
+        setBothPlayersReady(true);
+        console.log("Both players are ready, starting game...");
+
+        // Start the game after a short delay
+        setTimeout(() => {
+          setRoomJoined(false);
+          setWaitingForPlayers(false);
+          onSelectModeRef.current("online"); // This will trigger the loading screen
+        }, 1000);
+      }
     };
 
     // Register event listeners
@@ -93,7 +177,7 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       socketService.off("player-joined-room", handlePlayerJoinedRoom);
       socketService.off("player-ready", handlePlayerReady);
     };
-  }, [isAuthenticated, onSelectMode]);
+  }, [isAuthenticated]);
 
   // Reset player created state when user disconnects
   useEffect(() => {
@@ -103,8 +187,54 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       setRoomJoined(false);
       setPlayersInRoom(0);
       setWaitingForPlayers(false);
+      setBothPlayersReady(false);
+      setLocalPlayerReady(false);
+      setRemotePlayerReady(false);
+      readyPlayersRef.current.clear();
     }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    function onError(data) {
+      if (
+        data.type === "GAME_ERROR" &&
+        data.message === "Player already in a room"
+      ) {
+        // Reset and retry
+        socketService.forceReconnect().then(() => {
+          // You may want to pass player info here if needed
+          socketService.findMatch({ selectedPlayer });
+        });
+      }
+    }
+    socketService.on("error", onError);
+    return () => socketService.off("error", onError);
+  }, [selectedPlayer]);
+
+  useEffect(() => {
+    function onRoomJoined(data) {
+      setGameLoading(false); // Hide the loading overlay
+      // Reset ready state when joining a new room
+      setBothPlayersReady(false);
+      setLocalPlayerReady(false);
+      setRemotePlayerReady(false);
+      readyPlayersRef.current.clear();
+    }
+    socketService.on("room-joined", onRoomJoined);
+    return () => socketService.off("room-joined", onRoomJoined);
+  }, []);
+
+  useEffect(() => {
+    function onLeftRoom(data) {
+      // Reset ready state when leaving room
+      setBothPlayersReady(false);
+      setLocalPlayerReady(false);
+      setRemotePlayerReady(false);
+      readyPlayersRef.current.clear();
+    }
+    socketService.on("left-room", onLeftRoom);
+    return () => socketService.off("left-room", onLeftRoom);
+  }, []);
 
   const handlePlayerChange = (direction) => {
     if (direction === "next") {
@@ -120,6 +250,12 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       console.log("Matchmaking already in progress, ignoring click");
       return;
     }
+
+    // Reset ready state for new match
+    setBothPlayersReady(false);
+    setLocalPlayerReady(false);
+    setRemotePlayerReady(false);
+    readyPlayersRef.current.clear();
 
     if (socketService.isSocketConnected() && playerCreated) {
       console.log("Starting matchmaking...");
@@ -140,6 +276,28 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
     socketService.cancelMatchmaking();
   };
 
+  const handleReadyClick = () => {
+    console.log("Player clicked ready");
+    setLocalPlayerReady(true);
+    socketService.emitPlayerReady();
+  };
+
+  const handleResetConnection = async () => {
+    try {
+      console.log("User requested connection reset");
+      await socketService.forceReconnect();
+      setConnectionHealth(socketService.getConnectionHealth());
+      console.log("Connection reset successful");
+    } catch (error) {
+      console.error("Connection reset failed:", error);
+    }
+  };
+
+  const handleShowDebugInfo = () => {
+    setConnectionHealth(socketService.getConnectionHealth());
+    setShowDebugPanel(!showDebugPanel);
+  };
+
   return (
     <div
       style={{
@@ -154,20 +312,73 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       }}
     >
       <div className="flex items-center justify-between px-4 py-2">
-        <div>
+        <div className="flex items-center">
           <div className={`${isConnected ? "hidden" : "block"} `}>
             <CustomConnectButton />
           </div>
-          <span className={"address" + (isConnected ? " block" : " hidden")}>
-            {address?.slice(0, 6)}...{address?.slice(-4)}
-          </span>
+          <div
+            className={`${
+              isConnected ? "flex items-center font-pixel" : "hidden"
+            }`}
+          >
+            <span className="wallet-address text-white  font-pixel  text-sm ">
+              {address?.slice(0, 6)}...{address?.slice(-4)}
+            </span>
+            <NetworkSwitcher />
+          </div>
         </div>
-        <div>
+        <div className="flex items-center gap-4">
           <div className={`${isConnected ? "block" : "hidden"} `}>
             <CustomConnectButton />
           </div>
         </div>
       </div>
+
+      {/* Debug Panel */}
+      {isConnected && (
+        <div className="absolute top-2 right-2 z-20">
+          <button
+            onClick={handleShowDebugInfo}
+            className="bg-gray-800 text-white px-2 py-1 text-xs rounded"
+            title="Debug Info"
+          >
+            🐛
+          </button>
+        </div>
+      )}
+
+      {showDebugPanel && connectionHealth && (
+        <div className="absolute top-12 right-2 z-20 bg-gray-900 border border-gray-600 p-4 rounded text-xs text-white max-w-xs">
+          <h3 className="font-bold mb-2">Connection Debug</h3>
+          <div className="space-y-1">
+            <div>Connected: {connectionHealth.connected ? "✅" : "❌"}</div>
+            <div>
+              Player Created: {connectionHealth.playerCreated ? "✅" : "❌"}
+            </div>
+            <div>Room Joined: {connectionHealth.roomJoined ? "✅" : "❌"}</div>
+            <div>
+              Matchmaking: {connectionHealth.inMatchmaking ? "✅" : "❌"}
+            </div>
+            <div>
+              Duration: {connectionHealth.connectionDuration.toFixed(1)}s
+            </div>
+            <div>Socket ID: {connectionHealth.socketId?.slice(0, 8)}...</div>
+          </div>
+          <button
+            onClick={handleResetConnection}
+            className="mt-3 bg-red-600 text-white px-3 py-1 rounded text-xs hover:bg-red-700"
+          >
+            Reset Connection
+          </button>
+          <button
+            onClick={() => setShowDebugPanel(false)}
+            className="mt-2 ml-2 bg-gray-600 text-white px-3 py-1 rounded text-xs hover:bg-gray-700"
+          >
+            Close
+          </button>
+        </div>
+      )}
+
       {/* Title overlay */}
       <div
         style={{
@@ -301,14 +512,14 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           <PixelButton
             variant="menu"
             size="half-custom"
-            onClick={() => onSelectMode("2player")}
+            onClick={() => onSelectModeRef.current("2player")}
           >
             OFFLINE
           </PixelButton>
           <PixelButton
             variant="menu"
             size="half-custom"
-            onClick={() => onSelectMode("vsAI")}
+            onClick={() => onSelectModeRef.current("vsAI")}
           >
             1 VS AI
           </PixelButton>
@@ -347,7 +558,10 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       )}
 
       {/* Matchmaking Modal */}
-      {(isMatchmaking || roomJoined || waitingForPlayers) && (
+      {(isMatchmaking ||
+        roomJoined ||
+        waitingForPlayers ||
+        bothPlayersReady) && (
         <div
           style={{
             position: "fixed",
@@ -380,8 +594,16 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
               }}
             >
               {isMatchmaking && "FINDING MATCH..."}
-              {roomJoined && !waitingForPlayers && "ROOM JOINED!"}
+              {roomJoined &&
+                !waitingForPlayers &&
+                playersInRoom < 2 &&
+                "ROOM JOINED!"}
+              {roomJoined &&
+                playersInRoom >= 2 &&
+                !bothPlayersReady &&
+                "READY UP!"}
               {waitingForPlayers && "WAITING FOR PLAYERS"}
+              {bothPlayersReady && "STARTING GAME..."}
             </h2>
 
             <div
@@ -414,34 +636,74 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
                       Waiting for another player to join...
                     </div>
                   )}
-                  {playersInRoom >= 2 && (
+                  {playersInRoom >= 2 && !bothPlayersReady && (
+                    <>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          color: "#10b981",
+                          marginBottom: "10px",
+                        }}
+                      >
+                        Both players joined! Click READY to start.
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                        You: {localPlayerReady ? "✅ Ready" : "❌ Not Ready"}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                        Opponent:{" "}
+                        {remotePlayerReady ? "✅ Ready" : "⏳ Waiting..."}
+                      </div>
+                    </>
+                  )}
+                  {bothPlayersReady && (
                     <div style={{ fontSize: "12px", color: "#10b981" }}>
-                      All players ready! Starting game...
+                      Both players ready! Starting game...
                     </div>
                   )}
                 </>
               )}
             </div>
 
-            {/* Loading animation */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                marginBottom: "20px",
-              }}
-            >
+            {/* Loading animation - only show during matchmaking or when both players are ready */}
+            {(isMatchmaking || bothPlayersReady) && (
               <div
                 style={{
-                  width: "40px",
-                  height: "40px",
-                  border: "4px solid #374151",
-                  borderTop: "4px solid #fde047",
-                  borderRadius: "50%",
-                  animation: "spin 1s linear infinite",
+                  display: "flex",
+                  justifyContent: "center",
+                  marginBottom: "20px",
                 }}
-              />
-            </div>
+              >
+                <div
+                  style={{
+                    width: "40px",
+                    height: "40px",
+                    border: "4px solid #374151",
+                    borderTop: "4px solid #fde047",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Ready button - show when both players are in room but not ready */}
+            {roomJoined &&
+              playersInRoom >= 2 &&
+              !bothPlayersReady &&
+              !localPlayerReady && (
+                <PixelButton
+                  variant="menu"
+                  size="large"
+                  onClick={handleReadyClick}
+                  style={{
+                    backgroundColor: "#059669",
+                    borderColor: "#047857",
+                  }}
+                >
+                  READY UP!
+                </PixelButton>
+              )}
 
             {/* Cancel button - only show during matchmaking */}
             {isMatchmaking && (

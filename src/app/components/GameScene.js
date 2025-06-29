@@ -30,8 +30,17 @@ export class GameScene extends Phaser.Scene {
     this.ballTrail = [];
     this.isShaking = false;
 
-    // Game mode (2player or vsAI)
+    // Game mode (2player, vsAI, or online)
     this.gameMode = "2player";
+
+    // Online multiplayer state
+    this.playerPosition = null; // "player1" or "player2"
+    this.isBallAuthority = false; // Whether this player is responsible for ball physics
+    this.gameLogicService = null;
+    this.socketService = null;
+
+    // Ball state sending
+    this.lastBallStateSend = null;
   }
 
   init(data) {
@@ -39,6 +48,14 @@ export class GameScene extends Phaser.Scene {
       this.gameMode = window.__HEADBALL_GAME_MODE;
     } else if (data && data.gameMode) {
       this.gameMode = data.gameMode;
+    }
+
+    // Set global player position for online games
+    if (this.gameMode === "online" && typeof window !== "undefined") {
+      this.playerPosition = window.__HEADBALL_PLAYER_POSITION || null;
+      this.isBallAuthority = this.playerPosition === "player1"; // Player 1 is ball authority
+      console.log("Player position assigned:", this.playerPosition);
+      console.log("Ball authority:", this.isBallAuthority);
     }
   }
 
@@ -106,8 +123,259 @@ export class GameScene extends Phaser.Scene {
     this.startPowerupSystem();
     this.physics.add.collider(this.player1.sprite, this.player2.sprite);
 
+    // Initialize online multiplayer if needed
+    if (this.gameMode === "online") {
+      this.initializeOnlineMultiplayer();
+    }
+
     // Notify that game engine has finished loading
     this.notifyGameLoaded();
+  }
+
+  initializeOnlineMultiplayer() {
+    // Import the services dynamically to avoid SSR issues
+    if (typeof window !== "undefined") {
+      import("../../services/socketService")
+        .then(({ socketService }) => {
+          this.socketService = socketService;
+          this.setupOnlineEventListeners();
+          console.log("Online multiplayer initialized");
+          console.log("Player position:", this.playerPosition);
+          console.log("Ball authority:", this.isBallAuthority);
+        })
+        .catch((error) => {
+          console.error("Failed to initialize online multiplayer:", error);
+        });
+    }
+  }
+
+  setupOnlineEventListeners() {
+    if (!this.socketService) return;
+
+    console.log("Setting up online event listeners...");
+
+    // Listen for game state updates
+    this.socketService.on("game-started", (data) => {
+      console.log("Game started via socket:", data);
+      this.handleGameStarted(data);
+    });
+
+    this.socketService.on("match-ended", (data) => {
+      console.log("Match ended via socket:", data);
+      this.handleMatchEnded(data);
+    });
+
+    this.socketService.on("goal-scored", (data) => {
+      console.log("Goal scored via socket:", data);
+      this.handleGoalScored(data);
+    });
+
+    // Listen for player position updates
+    this.socketService.on("player-position", (data) => {
+      console.log("Received player-position event:", data);
+      this.handleRemotePlayerPosition(data);
+    });
+
+    // Listen for ball state updates
+    this.socketService.on("ball-state", (data) => {
+      console.log("Received ball-state event:", data);
+      this.handleRemoteBallState(data);
+    });
+
+    // Listen for individual input events
+    this.socketService.on("move-left", (data) => {
+      console.log("Received move-left event:", data);
+      this.handleRemotePlayerInput({ action: "move-left", ...data });
+    });
+
+    this.socketService.on("move-right", (data) => {
+      console.log("Received move-right event:", data);
+      this.handleRemotePlayerInput({ action: "move-right", ...data });
+    });
+
+    this.socketService.on("jump", (data) => {
+      console.log("Received jump event:", data);
+      this.handleRemotePlayerInput({ action: "jump", ...data });
+    });
+
+    this.socketService.on("kick", (data) => {
+      console.log("Received kick event:", data);
+      this.handleRemotePlayerInput({ action: "kick", ...data });
+    });
+
+    // Also listen for the generic player-input event as fallback
+    this.socketService.on("player-input", (data) => {
+      console.log("Received player-input event:", data);
+      this.handleRemotePlayerInput(data);
+    });
+
+    console.log("Online event listeners set up successfully");
+  }
+
+  handleGameStarted(data) {
+    console.log("Game started via socket:", data);
+    console.log("Current game state:", {
+      gameMode: this.gameMode,
+      playerPosition: this.playerPosition,
+      gameStarted: this.gameStarted,
+      gameOver: this.gameOver,
+      socketId: this.socketService?.getSocket()?.id,
+    });
+
+    // Reset only necessary game state (don't call resetGameState as it sets gameStarted = false)
+    this.player1Score = 0;
+    this.player2Score = 0;
+    this.gameOver = false;
+    this.goalCooldown = 0;
+    this.pausedForGoal = false;
+    this.gameTime = data.matchDuration || GAME_CONFIG.GAME_DURATION;
+    this.gameStarted = true; // Keep this true!
+    this.powerups = [];
+    this.powerupSpawnTimer = null;
+    this.lastPlayerToTouchBall = null;
+
+    console.log("Game state reset, starting timer and powerups...");
+
+    // Start the game timer for both players
+    this.startGameTimer();
+
+    // Start powerup system
+    this.startPowerupSystem();
+
+    // Reset player positions to starting positions
+    if (this.player1) {
+      // Reset to starting position based on player type
+      if (this.gameMode === "online" && this.playerPosition === "player1") {
+        // This player is player1 (right side)
+        this.player1.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x;
+        this.player1.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y;
+        console.log("Player1 (local) positioned on right side");
+      } else {
+        // This player is player2 (left side) or offline mode
+        this.player1.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x;
+        this.player1.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y;
+        console.log("Player1 (local) positioned on left side");
+      }
+      this.player1.sprite.body.setVelocity(0, 0);
+    }
+
+    if (this.player2) {
+      // Reset to starting position based on player type
+      if (this.gameMode === "online" && this.playerPosition === "player1") {
+        // This player is player1, so player2 is on left
+        this.player2.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x;
+        this.player2.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y;
+        console.log("Player2 (remote) positioned on left side");
+      } else {
+        // This player is player2, so player2 is on right
+        this.player2.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x;
+        this.player2.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y;
+        console.log("Player2 (remote) positioned on right side");
+      }
+      this.player2.sprite.body.setVelocity(0, 0);
+    }
+
+    // Reset ball position
+    if (this.ball) {
+      this.ball.x = GAME_CONFIG.BALL.STARTING_POSITION.x;
+      this.ball.y = GAME_CONFIG.BALL.STARTING_POSITION.y;
+      this.ball.body.setVelocity(0, 0);
+      console.log("Ball reset to center position");
+    }
+
+    // Update UI to show game is active
+    this.updateScoreDisplay();
+    this.updateTimerDisplay();
+    this.updatePositionIndicator();
+
+    console.log("Game started with duration:", this.gameTime);
+    console.log("Player position:", this.playerPosition);
+    console.log("Ball authority:", this.isBallAuthority);
+    console.log("Game is now active for this player!");
+  }
+
+  updatePositionIndicator() {
+    if (this.positionText && this.gameMode === "online") {
+      const controls =
+        this.player1.controls === "arrows" ? "Arrow Keys" : "WASD";
+      this.positionText.setText(
+        `You are: ${this.playerPosition} (${controls})`
+      );
+    }
+  }
+
+  handleMatchEnded(data) {
+    this.gameOver = true;
+    this.player1Score = data.finalScore?.player1 || 0;
+    this.player2Score = data.finalScore?.player2 || 0;
+    this.updateScoreDisplay();
+    this.handleGameEnd();
+  }
+
+  handleGoalScored(data) {
+    const scorer = data.scorer;
+    if (scorer === "player1") {
+      this.player1Score++;
+    } else if (scorer === "player2") {
+      this.player2Score++;
+    }
+    this.updateScoreDisplay();
+    this.showEnhancedGoalEffect();
+    this.resetAfterGoal();
+  }
+
+  handleRemoteBallState(data) {
+    if (this.gameMode !== "online" || this.isBallAuthority) {
+      return;
+    }
+
+    console.log("Receiving ball state from authority:", data);
+
+    // Update ball position from remote authority
+    if (this.ball) {
+      this.ball.x = data.ball.x;
+      this.ball.y = data.ball.y;
+      this.ball.body.setVelocity(data.ball.velocityX, data.ball.velocityY);
+    }
+  }
+
+  handleRemotePlayerPosition(data) {
+    if (this.gameMode !== "online" || data.position === this.playerPosition) {
+      return;
+    }
+
+    console.log("Handling remote player position:", data);
+
+    // Update remote player position
+    const remotePlayer = this.player2;
+    if (remotePlayer && remotePlayer.handlePositionUpdate) {
+      remotePlayer.handlePositionUpdate(data.player);
+    } else {
+      console.warn(
+        "Remote player not found or missing handlePositionUpdate method"
+      );
+    }
+  }
+
+  handleRemotePlayerInput(data) {
+    if (
+      this.gameMode !== "online" ||
+      data.playerId === this.socketService?.getSocket()?.id
+    ) {
+      return;
+    }
+
+    console.log("Handling remote player input:", data);
+
+    // Route input to the correct remote player
+    const remotePlayer = this.player2;
+    if (remotePlayer && remotePlayer.handleRemoteInput) {
+      remotePlayer.handleRemoteInput(data);
+    } else {
+      console.warn(
+        "Remote player not found or missing handleRemoteInput method"
+      );
+    }
   }
 
   notifyGameLoaded() {
@@ -213,18 +481,14 @@ export class GameScene extends Phaser.Scene {
     this.powerups = [];
 
     let resultMessage = "";
-    let resultColor = "#00ff00";
 
     if (this.player1Score > this.player2Score) {
       resultMessage = "🏆 Player 1 Wins! 🎉";
-      resultColor = "#1976d2";
     } else if (this.player2Score > this.player1Score) {
       const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
       resultMessage = `🏆 ${player2Name} Wins! 🎉`;
-      resultColor = "#d32f2f";
     } else {
       resultMessage = "🤝 It's a Draw! 🤝";
-      resultColor = "#ffaa00";
     }
 
     this.showOverlay({
@@ -310,11 +574,11 @@ export class GameScene extends Phaser.Scene {
 
   createFieldBoundaries() {
     // Create invisible walls for physics
-    // this.topWall = this.physics.add.staticGroup();
-    // this.topWall
-    //   .create(GAME_CONFIG.CANVAS_WIDTH / 2, -10, "pixel")
-    //   .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
-    //   .refreshBody();
+    this.topWall = this.physics.add.staticGroup();
+    this.topWall
+      .create(GAME_CONFIG.CANVAS_WIDTH / 2, -10, "pixel")
+      .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
+      .refreshBody();
 
     this.ground = this.physics.add.staticGroup();
     this.ground
@@ -322,42 +586,87 @@ export class GameScene extends Phaser.Scene {
       .setScale(GAME_CONFIG.CANVAS_WIDTH, 20)
       .refreshBody();
 
-    // this.leftWall = this.physics.add.staticGroup();
-    // this.leftWall
-    //   .create(-10, GAME_CONFIG.CANVAS_HEIGHT / 2, "pixel")
-    //   .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
-    //   .refreshBody();
+    this.leftWall = this.physics.add.staticGroup();
+    this.leftWall
+      .create(-10, GAME_CONFIG.CANVAS_HEIGHT / 2, "pixel")
+      .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
+      .refreshBody();
 
-    // this.rightWall = this.physics.add.staticGroup();
-    // this.rightWall
-    //   .create(
-    //     GAME_CONFIG.CANVAS_WIDTH + 10,
-    //     GAME_CONFIG.CANVAS_HEIGHT / 2,
-    //     "pixel"
-    //   )
-    //   .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
-    //   .refreshBody();
+    this.rightWall = this.physics.add.staticGroup();
+    this.rightWall
+      .create(
+        GAME_CONFIG.CANVAS_WIDTH + 10,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        "pixel"
+      )
+      .setScale(20, GAME_CONFIG.CANVAS_HEIGHT)
+      .refreshBody();
   }
 
   createPlayers() {
+    console.log("GameScene createPlayers called with:", {
+      gameMode: this.gameMode,
+      playerPosition: this.playerPosition,
+      roomData:
+        typeof window !== "undefined"
+          ? window.__HEADBALL_ROOM_DATA
+          : "undefined",
+    });
+
     if (this.gameMode === "online") {
-      // Player 1: Arrow keys, right side, use "player2" image
-      this.player1 = new Player(
-        this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
-        "PLAYER1",
-        "arrows",
-        "player2" // <-- right side image
-      );
-      // Player 2: Remote placeholder, left side, use "player1" image
-      this.player2 = new RemotePlayer(
-        this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
-        "PLAYER2",
-        "player1" // <-- left side image
-      );
+      // For online games, assign players based on position
+      if (this.playerPosition === "player1") {
+        console.log("Creating Player1 (local) and Player2 (remote)");
+        console.log("Player1 will use arrow controls and be on right side");
+        console.log("Player2 will be remote player on left side");
+
+        // This player is Player 1: Arrow keys, right side, use "player2" image
+        this.player1 = new Player(
+          this,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
+          "PLAYER1",
+          "arrows",
+          "player2" // <-- right side image
+        );
+        // Remote player is Player 2: left side, use "player1" image
+        this.player2 = new RemotePlayer(
+          this,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+          "PLAYER2",
+          "player1" // <-- left side image
+        );
+      } else {
+        console.log("Creating Player1 (remote) and Player2 (local)");
+        console.log("Player1 will be remote player on left side");
+        console.log("Player2 will use WASD controls and be on left side");
+
+        // This player is Player 2: WASD, left side, use "player1" image
+        this.player1 = new Player(
+          this,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+          "PLAYER1",
+          "wasd",
+          "player1"
+        );
+        // Remote player is Player 1: right side, use "player2" image
+        this.player2 = new RemotePlayer(
+          this,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
+          "PLAYER2",
+          "player2"
+        );
+      }
+
+      // Debug: Validate player objects after creation
+      console.log("Player1 created:", this.player1);
+      console.log("Player2 created:", this.player2);
+      console.log("Player1 controls:", this.player1.controls);
+      console.log("Player2 is remote:", this.player2 instanceof RemotePlayer);
+      this.validatePlayerObjects();
     } else if (this.gameMode === "vsAI") {
       // Player 1: WASD, left side, use "player1" image
       this.player1 = new Player(
@@ -398,6 +707,34 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.physics.add.collider(this.player1.sprite, this.player2.sprite);
+  }
+
+  // Helper method to validate player objects
+  validatePlayerObjects() {
+    const requiredMethods = [
+      "isCurrentlyShooting",
+      "getKickPower",
+      "getShootPower",
+      "getCurrentSpeed",
+      "getCurrentJumpVelocity",
+    ];
+
+    [this.player1, this.player2].forEach((player, index) => {
+      if (!player) {
+        console.error(`Player${index + 1} is null or undefined`);
+        return;
+      }
+
+      console.log(`Validating Player${index + 1}:`, player.constructor.name);
+
+      requiredMethods.forEach((method) => {
+        if (typeof player[method] !== "function") {
+          console.error(`Player${index + 1} missing method: ${method}`);
+        } else {
+          console.log(`Player${index + 1} has method: ${method}`);
+        }
+      });
+    });
   }
 
   createBall() {
@@ -481,6 +818,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   kickBall(player, ball) {
+    // Safety checks to ensure player object is valid
+    if (!player || !player.sprite || !ball) {
+      console.warn("Invalid player or ball object in kickBall");
+      return;
+    }
+
+    // Check if player has required methods
+    if (typeof player.isCurrentlyShooting !== "function") {
+      console.warn("Player missing isCurrentlyShooting method:", player);
+      return;
+    }
+
+    if (typeof player.getKickPower !== "function") {
+      console.warn("Player missing getKickPower method:", player);
+      return;
+    }
+
+    if (typeof player.getShootPower !== "function") {
+      console.warn("Player missing getShootPower method:", player);
+      return;
+    }
+
     // Determine if the player is shooting
     const isShooting = player.isCurrentlyShooting();
 
@@ -528,10 +887,13 @@ export class GameScene extends Phaser.Scene {
     // Slightly separate the ball from the player to avoid sticking
     ball.x += dirX * GAME_CONFIG.BALL.SEPARATION_FORCE;
     ball.y += dirY * GAME_CONFIG.BALL.SEPARATION_FORCE;
+
+    // Ball state is now sent in the update loop for better performance
   }
 
   handleGoal(scoringPlayer) {
     if (this.gameOver || this.pausedForGoal || this.goalCooldown > 0) return;
+
     // Update score
     if (scoringPlayer === "player1") {
       this.player1Score++;
@@ -543,6 +905,18 @@ export class GameScene extends Phaser.Scene {
     this.updateScoreDisplay();
     this.showEnhancedGoalEffect();
 
+    // Send goal to server for online games - only if game is active
+    if (this.gameMode === "online" && this.socketService && this.gameStarted) {
+      console.log("Sending goal to server:", scoringPlayer);
+      this.socketService.scoreGoal(scoringPlayer);
+    } else if (
+      this.gameMode === "online" &&
+      this.socketService &&
+      !this.gameStarted
+    ) {
+      console.warn("Cannot send goal to server: game not started yet");
+    }
+
     this.goalCooldown = GAME_CONFIG.GOAL_COOLDOWN;
     this.pausedForGoal = true;
 
@@ -551,158 +925,6 @@ export class GameScene extends Phaser.Scene {
       this.resetAfterGoal();
     });
   }
-
-  handleGameEnd() {
-    this.gameOver = true;
-
-    // Stop the timer and powerup systems
-    if (this.timerEvent) this.timerEvent.destroy();
-    if (this.powerupSpawnTimer) this.powerupSpawnTimer.destroy();
-
-    // Clean up remaining power-ups
-    this.powerups.forEach((powerup) => {
-      if (powerup.lifetimeTimer) {
-        powerup.lifetimeTimer.destroy();
-      }
-      if (powerup.sprite && powerup.sprite.active) {
-        powerup.sprite.destroy();
-      }
-      if (powerup.icon && powerup.icon.active) {
-        powerup.icon.destroy();
-      }
-    });
-    this.powerups = [];
-
-    let resultMessage = "";
-    let resultColor = "#00ff00";
-
-    if (this.player1Score > this.player2Score) {
-      resultMessage = "🏆 Player 1 Wins! 🎉";
-      resultColor = "#1976d2";
-    } else if (this.player2Score > this.player1Score) {
-      const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
-      resultMessage = `🏆 ${player2Name} Wins! 🎉`;
-      resultColor = "#d32f2f";
-    } else {
-      resultMessage = "🤝 It's a Draw! 🤝";
-      resultColor = "#ffaa00";
-    }
-
-    // // Enhanced result display
-    // this.winText.setText(resultMessage);
-    // this.winText.setStyle({
-    //   fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
-    //   fill: resultColor,
-    //   stroke: "#000000",
-    //   strokeThickness: 3,
-    //   align: "center",
-    // });
-
-    // // Add final score summary
-    // const finalScoreText = this.add.text(
-    //   GAME_CONFIG.CANVAS_WIDTH / 2,
-    //   350,
-    //   `Final Score: ${this.player1Score} - ${this.player2Score}`,
-    //   {
-    //     fontSize: "24px",
-    //     fill: "#ffffff",
-    //     stroke: "#000000",
-    //     strokeThickness: 2,
-    //     align: "center",
-    //   }
-    // );
-    // finalScoreText.setOrigin(0.5, 0.5);
-    // finalScoreText.setDepth(2000);
-
-    // this.winText.setVisible(true);
-    // this.restartButton.setVisible(true);
-
-    // // Stop all movement
-    // this.ball.body.setVelocity(0, 0);
-    // this.player1.sprite.body.setVelocity(0, 0);
-    // this.player2.sprite.body.setVelocity(0, 0);
-    // Show overlay with Rematch and Back to Main Menu
-    this.showOverlay({
-      message: resultMessage,
-      buttons: [
-        {
-          text: "REMATCH",
-          onClick: () => {
-            this.overlayGroup.clear(true, true);
-            this.scene.restart({ gameMode: this.gameMode });
-          },
-        },
-        {
-          text: "BACK TO MAIN MENU",
-          onClick: () => {
-            this.overlayGroup.clear(true, true);
-            this.restartGame();
-          },
-        },
-      ],
-    });
-
-    // Stop all movement
-    this.ball.body.setVelocity(0, 0);
-    this.player1.sprite.body.setVelocity(0, 0);
-    this.player2.sprite.body.setVelocity(0, 0);
-  }
-
-  // handleGameEnd() {
-  //   this.gameOver = true;
-  //   if (this.timerEvent) this.timerEvent.destroy();
-  //   if (this.powerupSpawnTimer) this.powerupSpawnTimer.destroy();
-
-  //   // Clean up remaining power-ups
-  //   this.powerups.forEach((powerup) => {
-  //     if (powerup.lifetimeTimer) {
-  //       powerup.lifetimeTimer.destroy();
-  //     }
-  //     if (powerup.sprite && powerup.sprite.active) {
-  //       powerup.sprite.destroy();
-  //     }
-  //     if (powerup.icon && powerup.icon.active) {
-  //       powerup.icon.destroy();
-  //     }
-  //   });
-  //   this.powerups = [];
-
-  //   let resultMessage = "";
-  //   if (this.player1Score > this.player2Score) {
-  //     resultMessage = "🏆 Player 1 Wins! 🎉";
-  //   } else if (this.player2Score > this.player1Score) {
-  //     const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
-  //     resultMessage = `🏆 ${player2Name} Wins! 🎉`;
-  //   } else {
-  //     resultMessage = "🤝 It's a Draw! 🤝";
-  //   }
-
-  //   // Show overlay with Rematch and Back to Main Menu
-  //   this.showOverlay({
-  //     message: resultMessage,
-  //     buttons: [
-  //       {
-  //         text: "REMATCH",
-  //         onClick: () => {
-  //           this.overlayGroup.clear(true, true);
-  //           this.scene.restart({ gameMode: this.gameMode });
-  //         },
-  //       },
-  //       {
-  //         text: "BACK TO MAIN MENU",
-  //         onClick: () => {
-  //           this.overlayGroup.clear(true, true);
-  //           this.restartGame();
-  //         },
-  //       },
-  //     ],
-  //   });
-
-  //   // Stop all movement
-  //   this.ball.body.setVelocity(0, 0);
-  //   this.player1.sprite.body.setVelocity(0, 0);
-  //   this.player2.sprite.body.setVelocity(0, 0);
-  // }
 
   createUI() {
     // Timer display (top center)
@@ -746,6 +968,30 @@ export class GameScene extends Phaser.Scene {
       )
       .setOrigin(0.5, 0.5)
       .setDepth(3000);
+
+    // Player position indicator for online games
+    if (this.gameMode === "online") {
+      this.positionText = this.add
+        .text(
+          GAME_CONFIG.CANVAS_WIDTH / 2,
+          GAME_CONFIG.UI.SCORE_Y + 60,
+          `You are: ${this.playerPosition || "Unknown"}`,
+          {
+            fontFamily: '"Press Start 2P"',
+            fontSize: "16px",
+            fill: "#ffff00",
+            backgroundColor: "#000",
+            padding: { x: 12, y: 6 },
+            align: "center",
+            fontStyle: "bold",
+            borderRadius: 8,
+            stroke: "#000",
+            strokeThickness: 2,
+          }
+        )
+        .setOrigin(0.5, 0.5)
+        .setDepth(3000);
+    }
 
     // Goal effect text (centered, hidden by default)
     this.goalEffectText = this.add
@@ -1439,6 +1685,37 @@ export class GameScene extends Phaser.Scene {
     this.player1.update();
     this.player2.update();
     if (this.goalCooldown > 0) this.goalCooldown--;
+
+    // Send position updates for online multiplayer
+    if (this.gameMode === "online" && this.gameStarted) {
+      // Only send position from the local player (player1 is always local in online mode)
+      if (
+        this.player1 &&
+        this.player1.isOnlinePlayer &&
+        this.player1.sendPlayerPosition
+      ) {
+        this.player1.sendPlayerPosition();
+      }
+
+      // Send ball state if this player is the ball authority
+      if (this.isBallAuthority && this.ball) {
+        // Throttle ball state updates to every 50ms
+        const now = Date.now();
+        if (!this.lastBallStateSend || now - this.lastBallStateSend > 50) {
+          const ballState = {
+            ball: {
+              x: this.ball.x,
+              y: this.ball.y,
+              velocityX: this.ball.body.velocity.x,
+              velocityY: this.ball.body.velocity.y,
+            },
+          };
+          console.log("Sending ball state:", ballState);
+          this.socketService.sendBallState(ballState);
+          this.lastBallStateSend = now;
+        }
+      }
+    }
 
     this.checkBallBounds();
     this.updatePlayerStatsDisplay();

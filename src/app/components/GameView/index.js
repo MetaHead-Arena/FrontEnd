@@ -31,181 +31,325 @@ export default function GameView() {
   }, []);
 
   // Handle game mode selection with loading for online mode
-  const handleGameModeSelect = useCallback((mode) => {
-    if (mode === "online") {
-      // For online mode, show loading screen first
-      setGameLoading(true);
-      // Start game initialization
-      setTimeout(() => {
+  const handleGameModeSelect = useCallback(
+    (mode) => {
+      if (mode === "online") {
+        // For online mode, show loading screen first
+        setGameLoading(true);
+
+        // Set up global variables for the game
+        if (typeof window !== "undefined") {
+          window.__HEADBALL_GAME_MODE = mode;
+          window.__HEADBALL_RETURN_TO_MENU = returnToMenu;
+
+          // Determine player position based on room data
+          const roomInfo = socketService.getRoomInfo();
+          const socketId = socketService.getSocket()?.id;
+
+          console.log("Room info for position assignment:", roomInfo);
+          console.log("Current socket ID:", socketId);
+
+          // Get player position from room data if available
+          let playerPosition = null;
+
+          // Try to get position from stored room data first
+          if (typeof window !== "undefined" && window.__HEADBALL_ROOM_DATA) {
+            const roomData = window.__HEADBALL_ROOM_DATA;
+            console.log(
+              "Using stored room data for position assignment:",
+              roomData
+            );
+
+            // Check if we have player information in the room data
+            if (roomData.players && Array.isArray(roomData.players)) {
+              console.log("Room players:", roomData.players);
+
+              // Find our player in the room data using socket ID or player ID
+              const thisPlayer = roomData.players.find(
+                (player) =>
+                  player.socketId === socketId ||
+                  player.id === socketId ||
+                  player.playerId === socketId
+              );
+
+              if (thisPlayer) {
+                // Use the position from the server - this is the key fix!
+                playerPosition = thisPlayer.position;
+                console.log(
+                  "Found player in room data:",
+                  thisPlayer,
+                  "Position:",
+                  playerPosition
+                );
+              } else {
+                // Fallback: use array index based on join order
+                const playerIndex = roomData.players.findIndex(
+                  (player) =>
+                    player.socketId === socketId ||
+                    player.id === socketId ||
+                    player.playerId === socketId
+                );
+                if (playerIndex !== -1) {
+                  playerPosition = playerIndex === 0 ? "player1" : "player2";
+                  console.log(
+                    "Using array index for position:",
+                    playerIndex,
+                    "Position:",
+                    playerPosition
+                  );
+                } else {
+                  // If we can't find our socket ID, use join order
+                  console.log(
+                    "Socket ID not found in players array, using join order"
+                  );
+                  playerPosition =
+                    roomData.players.length === 1 ? "player1" : "player2";
+                  console.log("Using join order position:", playerPosition);
+                }
+              }
+            } else {
+              // Fallback: use players count
+              if (roomData.players && roomData.players.length === 1) {
+                playerPosition = "player1";
+              } else if (roomData.players && roomData.players.length === 2) {
+                playerPosition = "player2";
+              }
+            }
+          }
+
+          // If we still don't have a position, try room state
+          if (!playerPosition && roomInfo.roomId) {
+            const roomState = socketService.getCurrentRoomState();
+            console.log("Using room state for position assignment:", roomState);
+
+            if (roomState.playersInRoom === 1) {
+              playerPosition = "player1";
+            } else if (roomState.playersInRoom === 2) {
+              playerPosition = "player2";
+            }
+          }
+
+          // Final fallback: use socket ID hash for consistent assignment
+          if (!playerPosition) {
+            const socketHash = socketId
+              ? socketId.split("").reduce((a, b) => {
+                  a = (a << 5) - a + b.charCodeAt(0);
+                  return a & a;
+                }, 0)
+              : 0;
+            playerPosition = socketHash % 2 === 0 ? "player1" : "player2";
+            console.log(
+              "Using socket hash fallback position assignment:",
+              playerPosition,
+              "Hash:",
+              socketHash
+            );
+          }
+
+          window.__HEADBALL_PLAYER_POSITION = playerPosition;
+
+          console.log(
+            "Final player position assignment:",
+            window.__HEADBALL_PLAYER_POSITION
+          );
+        }
+
+        // Start game initialization
+        setTimeout(() => {
+          setGameMode(mode);
+        }, 100); // Small delay to ensure loading screen shows
+      } else {
+        // For offline modes, start immediately
+        if (typeof window !== "undefined") {
+          window.__HEADBALL_GAME_MODE = mode;
+          window.__HEADBALL_RETURN_TO_MENU = returnToMenu;
+        }
         setGameMode(mode);
-      }, 100); // Small delay to ensure loading screen shows
-    } else {
-      // For offline modes, start immediately
-      setGameMode(mode);
-    }
-  }, []);
+      }
+    },
+    [returnToMenu]
+  );
 
-  // Callback when game finishes loading (called from GameScene)
-  const onGameLoaded = useCallback(() => {
-    console.log("Game engine loaded, emitting player-ready");
-    setGameLoading(false);
+  // Initialize game when gameMode changes
+  useEffect(() => {
+    if (!gameMode || gameInitialized) return;
 
-    // Emit player-ready only for online games
-    if (gameMode === "online" && socketService.isRoomJoined()) {
-      socketService.emitPlayerReady();
-    }
+    const initializeGame = async () => {
+      try {
+        // Import Phaser dynamically to avoid SSR issues
+        const Phaser = await import("phaser");
+
+        // Import game components
+        const { GameScene } = await import("../GameScene.js");
+        const { GAME_CONFIG } = await import("../config.js");
+
+        // Create game configuration
+        const config = {
+          type: Phaser.AUTO,
+          width: GAME_CONFIG.CANVAS_WIDTH,
+          height: GAME_CONFIG.CANVAS_HEIGHT,
+          parent: gameContainerRef.current,
+          backgroundColor: "#000000",
+          physics: {
+            default: "arcade",
+            arcade: {
+              gravity: { y: GAME_CONFIG.GRAVITY },
+              debug: false,
+            },
+          },
+          scene: GameScene,
+          scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+          },
+        };
+
+        // Create and start the game
+        const game = new Phaser.Game(config);
+
+        // Store game instance globally for cleanup
+        if (typeof window !== "undefined") {
+          window.__HEADBALL_GAME = game;
+          // Store the callback function directly to avoid dependency issues
+          window.__HEADBALL_GAME_LOADED = () => {
+            console.log(
+              "Game engine loaded, checking if ready to emit player-ready"
+            );
+            setGameLoading(false);
+
+            // Emit player-ready only for online games with proper checks
+            if (gameMode === "online") {
+              // Add a small delay to ensure everything is properly initialized
+              setTimeout(() => {
+                if (
+                  socketService.isSocketConnected() &&
+                  socketService.isRoomJoined()
+                ) {
+                  console.log(
+                    "Socket connected and room joined, emitting player-ready"
+                  );
+                  socketService.emitPlayerReady();
+                } else {
+                  console.warn(
+                    "Cannot emit player-ready: socket not connected or room not joined"
+                  );
+                  console.log(
+                    "Socket connected:",
+                    socketService.isSocketConnected()
+                  );
+                  console.log("Room joined:", socketService.isRoomJoined());
+                }
+              }, 500);
+            }
+          };
+        }
+
+        gameInitialized = true;
+        console.log("Game initialized successfully");
+      } catch (error) {
+        console.error("Failed to initialize game:", error);
+        setGameLoading(false);
+      }
+    };
+
+    initializeGame();
+
+    // Cleanup function
+    return () => {
+      if (typeof window !== "undefined" && window.__HEADBALL_GAME) {
+        window.__HEADBALL_GAME.destroy(true);
+        window.__HEADBALL_GAME = null;
+      }
+      gameInitialized = false;
+    };
   }, [gameMode]);
 
-  if (gameMode && !gameInitialized && typeof window !== "undefined") {
-    gameInitialized = true;
-    (async () => {
-      const { GameScene } = await import("../GameScene.js");
-      const config = {
-        type: Phaser.AUTO,
-        width: 1536,
-        height: 1024,
-        parent: gameContainerRef.current,
-        backgroundColor: "#000000",
-        physics: {
-          default: "arcade",
-          arcade: { debug: false },
-        },
-        scene: [GameScene],
-        scale: {
-          mode: window.Phaser ? window.Phaser.Scale.FIT : undefined,
-          autoCenter: window.Phaser
-            ? window.Phaser.Scale.CENTER_BOTH
-            : undefined,
-          width: 1536,
-          height: 1024,
-        },
-      };
-      window.__HEADBALL_GAME_MODE = gameMode;
-      window.__HEADBALL_GAME = new window.Phaser.Game(config);
-      // Store the return to menu function globally so the game can access it
-      window.__HEADBALL_RETURN_TO_MENU = returnToMenu;
-      // Store the game loaded callback globally so the game can notify when ready
-      window.__HEADBALL_GAME_LOADED = onGameLoaded;
-    })();
+  // Handle marketplace mode
+  const handleMarketplace = useCallback(() => {
+    setMarketplaceMode(true);
+  }, []);
+
+  // Handle return from marketplace
+  const handleReturnFromMarketplace = useCallback(() => {
+    setMarketplaceMode(false);
+  }, []);
+
+  if (marketplaceMode) {
+    return <Marketplace onReturn={handleReturnFromMarketplace} />;
   }
 
-  return (
-    <div style={{ position: "relative", width: "100vw", height: "100vh" }}>
-      {gameMode && (
-        <div
-          style={{
-            width: "100vw",
-            height: "100vh",
-            background: "#a86c2c",
-            position: "fixed",
-            top: 0,
-            left: 0,
-            zIndex: 0,
-          }}
-        />
-      )}
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          position: "relative",
-          zIndex: 1,
-        }}
-      >
-        {!gameMode && !marketplaceMode && !gameLoading && (
-          <GameMenu
-            onSelectMode={handleGameModeSelect}
-            onMarketplace={() => setMarketplaceMode(true)}
-          />
-        )}
-        {marketplaceMode && <Marketplace onBack={returnToMenu} />}
-
-        {/* Game Loading Screen */}
-        {gameLoading && (
+  if (gameMode) {
+    return (
+      <div className="game-container">
+        {/* Loading overlay for online games */}
+        {gameLoading && gameMode === "online" && (
           <div
             style={{
               position: "fixed",
-              inset: 0,
-              background:
-                "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%)",
-              zIndex: 10000,
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: "rgba(0,0,0,0.9)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
+              zIndex: 10000,
             }}
           >
             <div
               style={{
+                background: "#1e293b",
+                border: "4px solid #ffd600",
+                borderRadius: "8px",
+                padding: "32px",
                 textAlign: "center",
-                color: "#fff",
-                fontFamily: '"Press Start 2P", monospace',
+                maxWidth: "500px",
+                width: "90%",
               }}
             >
-              <div
+              <h2
                 style={{
-                  fontSize: "32px",
-                  marginBottom: "30px",
                   color: "#fde047",
-                  textShadow: "3px 3px 0 #000",
-                  letterSpacing: "2px",
+                  fontFamily: '"Press Start 2P", monospace',
+                  fontSize: "24px",
+                  marginBottom: "20px",
+                  textShadow: "2px 2px 0 #000",
                 }}
               >
-                LOADING GAME ENGINE
+                LOADING GAME...
+              </h2>
+              <div
+                style={{
+                  color: "#fff",
+                  fontFamily: '"Press Start 2P", monospace',
+                  fontSize: "16px",
+                  marginBottom: "20px",
+                  lineHeight: "1.5",
+                }}
+              >
+                <div style={{ marginBottom: "10px" }}>
+                  🎮 Initializing game engine...
+                </div>
+                <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                  Please wait while we set up your match
+                </div>
               </div>
-
               <div
                 style={{
                   display: "flex",
                   justifyContent: "center",
-                  marginBottom: "30px",
+                  marginBottom: "20px",
                 }}
               >
                 <div
                   style={{
-                    width: "60px",
-                    height: "60px",
-                    border: "6px solid #374151",
-                    borderTop: "6px solid #fde047",
+                    width: "40px",
+                    height: "40px",
+                    border: "4px solid #374151",
+                    borderTop: "4px solid #fde047",
                     borderRadius: "50%",
                     animation: "spin 1s linear infinite",
-                  }}
-                />
-              </div>
-
-              <div
-                style={{
-                  fontSize: "14px",
-                  color: "#94a3b8",
-                  marginBottom: "20px",
-                  lineHeight: "1.6",
-                }}
-              >
-                Initializing physics engine...
-                <br />
-                Loading game assets...
-                <br />
-                Preparing multiplayer systems...
-              </div>
-
-              {/* Progress bar animation */}
-              <div
-                style={{
-                  width: "300px",
-                  height: "8px",
-                  background: "#374151",
-                  borderRadius: "4px",
-                  margin: "0 auto",
-                  overflow: "hidden",
-                  border: "2px solid #fde047",
-                }}
-              >
-                <div
-                  style={{
-                    width: "100%",
-                    height: "100%",
-                    background: "linear-gradient(90deg, #fde047, #facc15)",
-                    animation: "loading-progress 3s ease-in-out infinite",
-                    transform: "translateX(-100%)",
                   }}
                 />
               </div>
@@ -213,23 +357,19 @@ export default function GameView() {
           </div>
         )}
 
-        {gameMode && (
-          <div
-            id="game-container"
-            ref={gameContainerRef}
-            style={{
-              width: "100vw",
-              height: "100vh",
-              position: "fixed",
-              top: 0,
-              left: 0,
-              zIndex: 1000,
-              background: "#000",
-            }}
-          />
-        )}
+        {/* Game container */}
+        <div
+          ref={gameContainerRef}
+          style={{
+            width: "100%",
+            height: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        />
 
-        {/* CSS for animations */}
+        {/* CSS for loading animation */}
         <style jsx>{`
           @keyframes spin {
             0% {
@@ -239,20 +379,15 @@ export default function GameView() {
               transform: rotate(360deg);
             }
           }
-
-          @keyframes loading-progress {
-            0% {
-              transform: translateX(-100%);
-            }
-            50% {
-              transform: translateX(0%);
-            }
-            100% {
-              transform: translateX(100%);
-            }
-          }
         `}</style>
       </div>
-    </div>
+    );
+  }
+
+  return (
+    <GameMenu
+      onSelectMode={handleGameModeSelect}
+      onMarketplace={handleMarketplace}
+    />
   );
 }

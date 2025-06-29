@@ -48,6 +48,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Add a ref to track if login is in progress to prevent concurrent attempts
   const loginInProgress = React.useRef(false);
+  // Add a ref to track previous authentication state to prevent loops
+  const prevAuthState = React.useRef(false);
 
   // Check authentication status on mount and when wallet changes
   useEffect(() => {
@@ -68,7 +70,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   // Auto logout when wallet disconnects - simplified
   useEffect(() => {
-    if (!isConnected && authState.isAuthenticated) {
+    if (!isConnected && prevAuthState.current) {
       // Clear auth state when wallet disconnects
       setAuthState({
         isAuthenticated: false,
@@ -76,8 +78,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isLoading: false,
         error: null,
       });
+      prevAuthState.current = false;
     }
-  }, [isConnected, authState.isAuthenticated]);
+  }, [isConnected]); // Removed authState.isAuthenticated from dependencies
+
+  // Update the ref when auth state changes
+  useEffect(() => {
+    prevAuthState.current = authState.isAuthenticated;
+  }, [authState.isAuthenticated]);
 
   const checkAuthStatus = useCallback(async () => {
     try {
@@ -144,7 +152,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setAuthState((prev) => ({ ...prev, isLoading: true, error: null }));
 
       // Step 1: Get nonce from backend using service
-      const nonce = await WagmiAuthService.generateNonce(address);
+      const nonce = await WagmiAuthService.generateNonce(address, chainId);
 
       // Step 2: Create SIWE message with validation
       const domain = window.location.host || "localhost:3001";
