@@ -1,4 +1,6 @@
-import { socketService } from './socketService';
+// @ts-nocheck
+
+import { socketService } from "./socketService";
 
 /**
  * MetaHead Arena - Complete Game Logic Service
@@ -9,14 +11,14 @@ import { socketService } from './socketService';
 export interface PlayerState {
   id: string;
   username: string;
-  position: 'player1' | 'player2';
+  position: "player1" | "player2";
   isReady: boolean;
   x: number;
   y: number;
   velocityX: number;
   velocityY: number;
   isOnGround: boolean;
-  direction: 'idle' | 'left' | 'right';
+  direction: "idle" | "left" | "right";
 }
 
 export interface BallState {
@@ -36,7 +38,7 @@ export interface GameState {
   players: PlayerState[];
   ball: BallState;
   isBallAuthority: boolean;
-  playerPosition: 'player1' | 'player2' | null;
+  playerPosition: "player1" | "player2" | null;
 }
 
 export interface InputState {
@@ -65,12 +67,15 @@ class GameLogicService {
   private gameMode: string = "1v1";
   private isReady: boolean = false;
   private playersInRoom: PlayerState[] = [];
-  private playerPosition: 'player1' | 'player2' | null = null;
+  private playerPosition: "player1" | "player2" | null = null;
   private isBallAuthority: boolean = false;
 
   // Game State
   private gameActive: boolean = false;
-  private score: { player1: number; player2: number } = { player1: 0, player2: 0 };
+  private score: { player1: number; player2: number } = {
+    player1: 0,
+    player2: 0,
+  };
   private gameTime: number = 60;
   private matchId: string | null = null;
 
@@ -80,40 +85,45 @@ class GameLogicService {
     player2: PlayerState;
   } = {
     player1: {
-      id: '',
-      username: 'Player 1',
-      position: 'player1',
+      id: "",
+      username: "Player 1",
+      position: "player1",
       isReady: false,
       x: 150,
       y: 320,
       velocityX: 0,
       velocityY: 0,
       isOnGround: true,
-      direction: 'idle',
+      direction: "idle",
     },
     player2: {
-      id: '',
-      username: 'Player 2',
-      position: 'player2',
+      id: "",
+      username: "Player 2",
+      position: "player2",
       isReady: false,
       x: 650,
       y: 320,
       velocityX: 0,
       velocityY: 0,
       isOnGround: true,
-      direction: 'idle',
+      direction: "idle",
     },
   };
 
-  private ball: BallState = { 
-    x: 400, 
-    y: 300, 
-    velocityX: 0, 
-    velocityY: 0 
+  private ball: BallState = {
+    x: 400,
+    y: 300,
+    velocityX: 0,
+    velocityY: 0,
   };
 
   // Input State
-  private input: InputState = { left: false, right: false, jump: false, kick: false };
+  private input: InputState = {
+    left: false,
+    right: false,
+    jump: false,
+    kick: false,
+  };
   private keys: { [key: string]: boolean } = {};
 
   // Physics Constants
@@ -143,7 +153,16 @@ class GameLogicService {
   private eventListeners: Map<string, Function[]> = new Map();
 
   constructor() {
-    this.init();
+    // Prevent automatic initialization unless explicitly requested.
+    if (
+      typeof window !== "undefined" &&
+      (window as any).__ENABLE_GAMELOGIC_SERVICE === true
+    ) {
+      this.init();
+    } else {
+      // Skip initialization to avoid duplicate socket/physics loops
+      console.info("GameLogicService auto-init disabled");
+    }
   }
 
   private init(): void {
@@ -177,7 +196,10 @@ class GameLogicService {
     this.socket.on("connect", () => {
       this.isConnected = true;
       this.playerId = this.socket.id;
-      this.logEvent("success", `Connected to server with socket ID: ${this.socket.id}`);
+      this.logEvent(
+        "success",
+        `Connected to server with socket ID: ${this.socket.id}`
+      );
     });
 
     this.socket.on("disconnect", (reason: string) => {
@@ -189,18 +211,23 @@ class GameLogicService {
     this.socket.on("welcome", (data: any) => {
       this.playerId = data.playerId;
       this.serverTime = data.serverTime;
-      
+
       if (data.authenticated && data.walletAddress) {
         this.walletAddress = data.walletAddress;
-        this.username = data.walletAddress.slice(0, 6) + "..." + data.walletAddress.slice(-4);
+        this.username =
+          data.walletAddress.slice(0, 6) + "..." + data.walletAddress.slice(-4);
       }
-      
+
       this.logEvent("socket", `Welcome message received`, data);
     });
 
     // Player Events
     this.socket.on("player-created", (data: any) => {
-      this.logEvent("success", `Player created: ${data.player?.username}`, data);
+      this.logEvent(
+        "success",
+        `Player created: ${data.player?.username}`,
+        data
+      );
       if (data.user) {
         this.username = data.user.walletAddress.slice(0, 6) + "...";
       }
@@ -219,7 +246,11 @@ class GameLogicService {
 
     this.socket.on("player-joined-room", (data: any) => {
       this.updatePlayersInRoom();
-      this.logEvent("info", `Player joined room: ${data.player?.username}`, data);
+      this.logEvent(
+        "info",
+        `Player joined room: ${data.player?.username}`,
+        data
+      );
     });
 
     this.socket.on("room-full", (data: any) => {
@@ -239,7 +270,13 @@ class GameLogicService {
     // Game Events
     this.socket.on("player-ready", (data: any) => {
       this.handlePlayerReady(data);
-      this.logEvent("info", `Player ready: ${data.username} (${data.isReady ? "ready" : "not ready"})`, data);
+      this.logEvent(
+        "info",
+        `Player ready: ${data.username} (${
+          data.isReady ? "ready" : "not ready"
+        })`,
+        data
+      );
     });
 
     this.socket.on("game-started", (data: any) => {
@@ -260,7 +297,11 @@ class GameLogicService {
     // Input Events
     this.socket.on("player-input", (data: any) => {
       this.handleRemotePlayerInput(data);
-      this.logEvent("socket", `Input from ${data.username}: ${data.action}`, data);
+      this.logEvent(
+        "socket",
+        `Input from ${data.username}: ${data.action}`,
+        data
+      );
     });
 
     // Ball Synchronization Events
@@ -305,13 +346,18 @@ class GameLogicService {
     this.playersInRoom = data.players || [];
 
     // Determine player position
-    const thisPlayer = this.playersInRoom.find((p: PlayerState) => p.id === this.playerId);
+    const thisPlayer = this.playersInRoom.find(
+      (p: PlayerState) => p.id === this.playerId
+    );
     if (thisPlayer) {
       this.playerPosition = thisPlayer.position;
       this.isBallAuthority = this.playerPosition === "player1"; // Player 1 is ball authority
       this.logEvent("info", `You are ${this.playerPosition}`);
       if (this.isBallAuthority) {
-        this.logEvent("info", "You are the ball authority - managing ball physics");
+        this.logEvent(
+          "info",
+          "You are the ball authority - managing ball physics"
+        );
       }
     }
 
@@ -397,7 +443,11 @@ class GameLogicService {
 
   private handlePlayerPositionUpdate(data: any): void {
     // Only update remote player positions, not our own
-    if (!data.position || data.position === this.playerPosition || !this.gameActive) {
+    if (
+      !data.position ||
+      data.position === this.playerPosition ||
+      !this.gameActive
+    ) {
       return;
     }
 
@@ -407,10 +457,16 @@ class GameLogicService {
     // Apply received position with interpolation to smooth network jitter
     const lerpFactor = 0.7;
 
-    remotePlayer.x = remotePlayer.x * (1 - lerpFactor) + data.player.x * lerpFactor;
-    remotePlayer.y = remotePlayer.y * (1 - lerpFactor) + data.player.y * lerpFactor;
-    remotePlayer.velocityX = remotePlayer.velocityX * (1 - lerpFactor) + data.player.velocityX * lerpFactor;
-    remotePlayer.velocityY = remotePlayer.velocityY * (1 - lerpFactor) + data.player.velocityY * lerpFactor;
+    remotePlayer.x =
+      remotePlayer.x * (1 - lerpFactor) + data.player.x * lerpFactor;
+    remotePlayer.y =
+      remotePlayer.y * (1 - lerpFactor) + data.player.y * lerpFactor;
+    remotePlayer.velocityX =
+      remotePlayer.velocityX * (1 - lerpFactor) +
+      data.player.velocityX * lerpFactor;
+    remotePlayer.velocityY =
+      remotePlayer.velocityY * (1 - lerpFactor) +
+      data.player.velocityY * lerpFactor;
     remotePlayer.direction = data.player.direction;
     remotePlayer.isOnGround = data.player.isOnGround;
 
@@ -426,8 +482,10 @@ class GameLogicService {
 
     this.ball.x = this.ball.x * (1 - lerpFactor) + data.ball.x * lerpFactor;
     this.ball.y = this.ball.y * (1 - lerpFactor) + data.ball.y * lerpFactor;
-    this.ball.velocityX = this.ball.velocityX * (1 - lerpFactor) + data.ball.velocityX * lerpFactor;
-    this.ball.velocityY = this.ball.velocityY * (1 - lerpFactor) + data.ball.velocityY * lerpFactor;
+    this.ball.velocityX =
+      this.ball.velocityX * (1 - lerpFactor) + data.ball.velocityX * lerpFactor;
+    this.ball.velocityY =
+      this.ball.velocityY * (1 - lerpFactor) + data.ball.velocityY * lerpFactor;
 
     this.emit("ball-state-updated", data);
   }
@@ -464,7 +522,7 @@ class GameLogicService {
     }
   }
 
-  private updatePlayerPhysics(playerKey: 'player1' | 'player2'): void {
+  private updatePlayerPhysics(playerKey: "player1" | "player2"): void {
     const player = this.players[playerKey];
 
     // Apply gravity
@@ -545,7 +603,7 @@ class GameLogicService {
   private checkCollisions(): void {
     // Player-ball collisions
     ["player1", "player2"].forEach((playerKey) => {
-      const player = this.players[playerKey as 'player1' | 'player2'];
+      const player = this.players[playerKey as "player1" | "player2"];
       const dx = player.x - this.ball.x;
       const dy = player.y - this.ball.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -577,7 +635,7 @@ class GameLogicService {
     }
   }
 
-  private handleLocalGoal(scorer: 'player1' | 'player2'): void {
+  private handleLocalGoal(scorer: "player1" | "player2"): void {
     this.logEvent("success", `Local goal detected: ${scorer} scored!`);
     if (this.socket && this.isConnected) {
       this.socket.emit("goal-scored", { scorer: scorer });
@@ -681,7 +739,8 @@ class GameLogicService {
         case "arrowup":
         case " ":
           if (this.players[this.playerPosition].isOnGround) {
-            this.players[this.playerPosition].velocityY = -this.physics.jumpPower;
+            this.players[this.playerPosition].velocityY =
+              -this.physics.jumpPower;
             this.players[this.playerPosition].isOnGround = false;
             this.sendInput("jump", { pressed: true });
             inputSent = true;
@@ -726,7 +785,12 @@ class GameLogicService {
 
   private broadcastBallState(): void {
     // Only broadcast if we're the ball authority and connected
-    if (!this.isBallAuthority || !this.socket || !this.isConnected || !this.gameActive) {
+    if (
+      !this.isBallAuthority ||
+      !this.socket ||
+      !this.isConnected ||
+      !this.gameActive
+    ) {
       return;
     }
 
@@ -747,7 +811,12 @@ class GameLogicService {
 
   private broadcastPlayerPosition(): void {
     // Only broadcast if we have a position and are connected
-    if (!this.playerPosition || !this.socket || !this.isConnected || !this.gameActive) {
+    if (
+      !this.playerPosition ||
+      !this.socket ||
+      !this.isConnected ||
+      !this.gameActive
+    ) {
       return;
     }
 
@@ -840,7 +909,7 @@ class GameLogicService {
     };
   }
 
-  public getPlayerPosition(): 'player1' | 'player2' | null {
+  public getPlayerPosition(): "player1" | "player2" | null {
     return this.playerPosition;
   }
 
@@ -852,7 +921,11 @@ class GameLogicService {
     return this.isBallAuthority;
   }
 
-  public getRoomInfo(): { roomId: string | null; roomCode: string | null; playersInRoom: number } {
+  public getRoomInfo(): {
+    roomId: string | null;
+    roomCode: string | null;
+    playersInRoom: number;
+  } {
     return {
       roomId: this.roomId,
       roomCode: this.roomCode,
@@ -913,7 +986,7 @@ class GameLogicService {
   }
 
   private logEvent(type: string, message: string, data?: any): void {
-    console.log(`[${type.toUpperCase()}] ${message}`, data || '');
+    console.log(`[${type.toUpperCase()}] ${message}`, data || "");
     this.emit("log", { type, message, data });
   }
 
@@ -923,11 +996,11 @@ class GameLogicService {
       clearInterval(this.gameLoop);
       this.gameLoop = null;
     }
-    
+
     // Remove keyboard listeners
     document.removeEventListener("keydown", this.setupKeyboardControls);
     document.removeEventListener("keyup", this.setupKeyboardControls);
-    
+
     this.eventListeners.clear();
   }
 
@@ -937,6 +1010,5 @@ class GameLogicService {
   }
 }
 
-// Export singleton instance
-export const gameLogicService = new GameLogicService();
-export default gameLogicService; 
+// Preserve default export for potential manual use
+export default GameLogicService;

@@ -111,19 +111,36 @@ export class RemotePlayer {
     const currentVelocityX = this.sprite.body.velocity.x;
     const currentVelocityY = this.sprite.body.velocity.y;
 
+    // Calculate position difference to determine interpolation strategy
+    const positionDiffX = Math.abs(this.targetX - currentX);
+    const positionDiffY = Math.abs(this.targetY - currentY);
+    const totalPositionDiff = Math.sqrt(
+      positionDiffX * positionDiffX + positionDiffY * positionDiffY
+    );
+
+    // Adaptive interpolation factor based on distance
+    let interpolationFactor = this.interpolationFactor;
+
+    // If the player is far away, snap more aggressively
+    if (totalPositionDiff > 50) {
+      interpolationFactor = 0.9; // Fast correction for large differences
+    } else if (totalPositionDiff > 20) {
+      interpolationFactor = 0.8; // Medium correction for medium differences
+    } else {
+      interpolationFactor = 0.6; // Smooth interpolation for small differences
+    }
+
     // Interpolate position
-    const newX =
-      currentX + (this.targetX - currentX) * this.interpolationFactor;
-    const newY =
-      currentY + (this.targetY - currentY) * this.interpolationFactor;
+    const newX = currentX + (this.targetX - currentX) * interpolationFactor;
+    const newY = currentY + (this.targetY - currentY) * interpolationFactor;
 
     // Interpolate velocity
     const newVelocityX =
       currentVelocityX +
-      (this.targetVelocityX - currentVelocityX) * this.interpolationFactor;
+      (this.targetVelocityX - currentVelocityX) * interpolationFactor;
     const newVelocityY =
       currentVelocityY +
-      (this.targetVelocityY - currentVelocityY) * this.interpolationFactor;
+      (this.targetVelocityY - currentVelocityY) * interpolationFactor;
 
     // Apply interpolated values
     this.sprite.x = newX;
@@ -144,29 +161,38 @@ export class RemotePlayer {
   handleRemoteInput(inputData) {
     if (!this.isOnlinePlayer || !inputData.action) return;
 
-    const currentSpeed = GAME_CONFIG.PLAYER.BASE_SPEED * this.attributes.speed;
-    const currentJumpVelocity =
-      GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY * this.attributes.jumpHeight;
+    const currentSpeed =
+      GAME_CONFIG.PLAYER.BASE_SPEED * this.attributes.speed * 2.0; // Match OnlineGameScene speed
+    const currentJumpVelocity = Math.abs(
+      GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY * this.attributes.jumpHeight
+    );
 
     switch (inputData.action) {
       case "move-left":
         if (inputData.pressed) {
           this.targetVelocityX = -currentSpeed;
+          this.direction = "left";
         } else {
-          this.targetVelocityX = 0;
+          // Apply friction when stopping movement
+          this.targetVelocityX *= 0.8;
         }
         break;
       case "move-right":
         if (inputData.pressed) {
           this.targetVelocityX = currentSpeed;
+          this.direction = "right";
         } else {
-          this.targetVelocityX = 0;
+          // Apply friction when stopping movement
+          this.targetVelocityX *= 0.8;
         }
         break;
       case "jump":
         if (inputData.pressed && this.isOnGround) {
           this.targetVelocityY = -currentJumpVelocity;
           this.isOnGround = false;
+          console.log(
+            `Remote player jumped with power: ${currentJumpVelocity}`
+          );
         }
         break;
       case "kick":
@@ -175,6 +201,11 @@ export class RemotePlayer {
           this.showKickEffect();
         }
         break;
+      case "stop":
+        // Handle stop movement
+        this.targetVelocityX = 0;
+        this.direction = "idle";
+        break;
     }
   }
 
@@ -182,15 +213,37 @@ export class RemotePlayer {
   handlePositionUpdate(positionData) {
     if (!this.isOnlinePlayer || !positionData) return;
 
+    // Calculate time since last update to determine if we need immediate correction
+    const now = Date.now();
+    if (!this.lastPositionUpdate) {
+      this.lastPositionUpdate = now;
+    }
+
+    const timeSinceLastUpdate = now - this.lastPositionUpdate;
+    this.lastPositionUpdate = now;
+
     // Update target position for interpolation
     this.targetX = positionData.x || this.sprite.x;
     this.targetY = positionData.y || this.sprite.y;
     this.targetVelocityX = positionData.velocityX || 0;
     this.targetVelocityY = positionData.velocityY || 0;
 
-    // Update direction
+    // Update direction and ground state
     this.direction = positionData.direction || "idle";
-    this.isOnGround = positionData.isOnGround || false;
+    this.isOnGround =
+      positionData.isOnGround !== undefined
+        ? positionData.isOnGround
+        : this.isOnGround;
+
+    // If too much time has passed since last update, snap to position immediately
+    if (timeSinceLastUpdate > 200) {
+      console.log(
+        "Long time since last position update, snapping to server position"
+      );
+      this.sprite.x = this.targetX;
+      this.sprite.y = this.targetY;
+      this.sprite.body.setVelocity(this.targetVelocityX, this.targetVelocityY);
+    }
   }
 
   showKickEffect() {

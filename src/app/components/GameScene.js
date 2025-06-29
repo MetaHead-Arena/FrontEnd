@@ -1466,6 +1466,13 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Prevent multiple rapid collisions
+    const now = Date.now();
+    if (player.lastBallCollision && now - player.lastBallCollision < 100) {
+      return;
+    }
+    player.lastBallCollision = now;
+
     // Determine if the player is shooting
     const isShooting = player.isCurrentlyShooting();
 
@@ -1504,17 +1511,22 @@ export class GameScene extends Phaser.Scene {
       kickY = dirY * kickForce + GAME_CONFIG.BALL.KICK_UPWARD_FORCE;
     }
 
-    // Apply velocity to the ball
+    // Apply velocity to the ball with momentum from player
+    const playerVelX = player.sprite.body.velocity.x;
+    const playerVelY = player.sprite.body.velocity.y;
+
     ball.body.setVelocity(
-      ball.body.velocity.x + kickX,
-      ball.body.velocity.y + kickY
+      ball.body.velocity.x + kickX + playerVelX * 0.3,
+      ball.body.velocity.y + kickY + playerVelY * 0.3
     );
 
     // Slightly separate the ball from the player to avoid sticking
     ball.x += dirX * GAME_CONFIG.BALL.SEPARATION_FORCE;
     ball.y += dirY * GAME_CONFIG.BALL.SEPARATION_FORCE;
 
-    // Ball state is now sent in the update loop for better performance
+    console.log(
+      `Ball kicked by ${player.attributes.name} with power ${kickForce}`
+    );
   }
 
   handleGoal(scoringPlayer) {

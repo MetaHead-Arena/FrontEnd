@@ -548,6 +548,7 @@ class SocketService {
     }
   }
 
+  // BEGIN EDIT: Restore sendMoveRight, sendJump, sendKick with unified emit logic
   sendMoveRight(pressed: boolean = true): void {
     if (this.socket && this.isConnected && this.roomJoined) {
       console.log("Emitting move-right:", { pressed });
@@ -576,23 +577,55 @@ class SocketService {
       console.error("Socket not connected or not in room, cannot emit kick");
     }
   }
+  // END EDIT
+
+  // BEGIN EDIT: Update sendInput switch to remove duplicate case string and handle synonyms uniformly
+  sendInput(action: string, data: any = {}): void {
+    if (!this.socket || !this.isConnected || !this.roomJoined) {
+      console.error(
+        `Socket not connected or not in room, cannot emit ${action}`
+      );
+      return;
+    }
+
+    // Allow synonyms for convenience
+    if (action === "moveRight") action = "move-right";
+
+    const allowedActions = [
+      "move-left",
+      "move-right",
+      "jump",
+      "kick",
+      "stop-move",
+    ];
+
+    if (!allowedActions.includes(action)) {
+      console.log(`Emitting generic input ${action}:`, data);
+    }
+
+    this.socket.emit(action, data);
+  }
+  // END EDIT
 
   // Enhanced player position synchronization matching demo
-  sendPlayerPosition(positionData: {
-    position: string;
-    player: {
-      x: number;
-      y: number;
-      velocityX: number;
-      velocityY: number;
-      direction: string;
-      isOnGround: boolean;
-    };
-  }): void {
+  sendPlayerPosition(positionDataOrPosition: any, maybePlayerData?: any): void {
+    // BEGIN EDIT: Support both new and legacy signatures
+    let payload;
+    if (typeof positionDataOrPosition === "string" && maybePlayerData) {
+      // Legacy call: (position, playerData)
+      payload = {
+        position: positionDataOrPosition,
+        player: maybePlayerData,
+      };
+    } else {
+      // New call: ({ position, player, ... })
+      payload = positionDataOrPosition;
+    }
+
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting player-position:", positionData);
+      console.log("Emitting player-position:", payload);
       this.socket.emit("player-position", {
-        ...positionData,
+        ...payload,
         timestamp: Date.now(),
       });
     } else {
@@ -601,6 +634,7 @@ class SocketService {
       );
     }
   }
+  // END EDIT
 
   // Enhanced ball state synchronization matching demo
   sendBallState(ballData: {

@@ -124,10 +124,13 @@ export class Player {
 
     this.updatePowerupIndicatorPosition();
 
-    if (this.controls === "arrows") {
-      this.handleArrowControls();
-    } else if (this.controls === "wasd") {
-      this.handleWASDControls();
+    // Skip input handling if controls is set to "none" (for online games)
+    if (this.controls !== "none") {
+      if (this.controls === "arrows") {
+        this.handleArrowControls();
+      } else if (this.controls === "wasd") {
+        this.handleWASDControls();
+      }
     }
 
     // Position sending is now handled in GameScene update loop for better performance
@@ -217,7 +220,10 @@ export class Player {
         };
 
         console.log(`Sending position for ${this.playerPosition}:`, playerData);
-        this.socketService.sendPlayerPosition(this.playerPosition, playerData);
+        this.socketService.sendPlayerPosition({
+          position: this.playerPosition,
+          player: playerData,
+        });
         this.lastPositionSend = now;
       }
     }
