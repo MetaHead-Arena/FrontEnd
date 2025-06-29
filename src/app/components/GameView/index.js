@@ -52,98 +52,67 @@ export default function GameView() {
           // Get player position from room data if available
           let playerPosition = null;
 
-          // Try to get position from stored room data first
-          if (typeof window !== "undefined" && window.__HEADBALL_ROOM_DATA) {
+          // First check if we already have a position assigned (most reliable)
+          if (
+            typeof window !== "undefined" &&
+            window.__HEADBALL_PLAYER_POSITION
+          ) {
+            playerPosition = window.__HEADBALL_PLAYER_POSITION;
+            console.log("Using existing player position:", playerPosition);
+          }
+          // Try to get position from stored room data if no existing position
+          else if (
+            typeof window !== "undefined" &&
+            window.__HEADBALL_ROOM_DATA
+          ) {
             const roomData = window.__HEADBALL_ROOM_DATA;
             console.log(
               "Using stored room data for position assignment:",
               roomData
             );
 
-            // Check if we have player information in the room data
-            if (roomData.players && Array.isArray(roomData.players)) {
-              console.log("Room players:", roomData.players);
-
-              // Find our player in the room data using socket ID or player ID
-              const thisPlayer = roomData.players.find(
+            // Use the same logic as GameMenu for consistency
+            if (
+              roomData.players &&
+              Array.isArray(roomData.players) &&
+              socketId
+            ) {
+              const playerIndex = roomData.players.findIndex(
                 (player) =>
                   player.socketId === socketId ||
                   player.id === socketId ||
                   player.playerId === socketId
               );
 
-              if (thisPlayer) {
-                // Use the position from the server - this is the key fix!
-                playerPosition = thisPlayer.position;
+              if (playerIndex !== -1) {
+                // First player (index 0) = player1, Second player (index 1) = player2
+                playerPosition = playerIndex === 0 ? "player1" : "player2";
                 console.log(
-                  "Found player in room data:",
-                  thisPlayer,
-                  "Position:",
-                  playerPosition
+                  `Player found at index ${playerIndex}, assigned position: ${playerPosition}`
                 );
               } else {
-                // Fallback: use array index based on join order
-                const playerIndex = roomData.players.findIndex(
-                  (player) =>
-                    player.socketId === socketId ||
-                    player.id === socketId ||
-                    player.playerId === socketId
+                // Fallback: if we're the first connection, assign player1
+                playerPosition =
+                  roomData.players.length === 1 ? "player1" : "player2";
+                console.log(
+                  `Player not found, using array length fallback: ${playerPosition}`
                 );
-                if (playerIndex !== -1) {
-                  playerPosition = playerIndex === 0 ? "player1" : "player2";
-                  console.log(
-                    "Using array index for position:",
-                    playerIndex,
-                    "Position:",
-                    playerPosition
-                  );
-                } else {
-                  // If we can't find our socket ID, use join order
-                  console.log(
-                    "Socket ID not found in players array, using join order"
-                  );
-                  playerPosition =
-                    roomData.players.length === 1 ? "player1" : "player2";
-                  console.log("Using join order position:", playerPosition);
-                }
               }
             } else {
-              // Fallback: use players count
-              if (roomData.players && roomData.players.length === 1) {
+              // Fallback based on join order - if we have room info and it's the first player
+              if (roomInfo && roomInfo.playersInRoom === 1) {
                 playerPosition = "player1";
-              } else if (roomData.players && roomData.players.length === 2) {
-                playerPosition = "player2";
+              } else {
+                // For safety, default to player1 if we can't determine reliably
+                playerPosition = "player1";
               }
+              console.log(`Using room info fallback: ${playerPosition}`);
             }
-          }
-
-          // If we still don't have a position, try room state
-          if (!playerPosition && roomInfo.roomId) {
-            const roomState = socketService.getCurrentRoomState();
-            console.log("Using room state for position assignment:", roomState);
-
-            if (roomState.playersInRoom === 1) {
-              playerPosition = "player1";
-            } else if (roomState.playersInRoom === 2) {
-              playerPosition = "player2";
-            }
-          }
-
-          // Final fallback: use socket ID hash for consistent assignment
-          if (!playerPosition) {
-            const socketHash = socketId
-              ? socketId.split("").reduce((a, b) => {
-                  a = (a << 5) - a + b.charCodeAt(0);
-                  return a & a;
-                }, 0)
-              : 0;
-            playerPosition = socketHash % 2 === 0 ? "player1" : "player2";
-            console.log(
-              "Using socket hash fallback position assignment:",
-              playerPosition,
-              "Hash:",
-              socketHash
-            );
+          } else {
+            // Final fallback - assign based on connection timing
+            // This should rarely be reached now that we preserve positions
+            playerPosition = "player1";
+            console.log("No room data available, defaulting to player1");
           }
 
           window.__HEADBALL_PLAYER_POSITION = playerPosition;
@@ -179,8 +148,18 @@ export default function GameView() {
         // Import Phaser dynamically to avoid SSR issues
         const Phaser = await import("phaser");
 
-        // Import game components
-        const { GameScene } = await import("../GameScene.js");
+        // Import game components - use different scene for online vs offline
+        let GameSceneClass;
+        if (gameMode === "online") {
+          const { OnlineGameScene } = await import("../OnlineGameScene.js");
+          GameSceneClass = OnlineGameScene;
+          console.log("Using OnlineGameScene for online multiplayer");
+        } else {
+          const { GameScene } = await import("../GameScene.js");
+          GameSceneClass = GameScene;
+          console.log("Using GameScene for offline/AI mode");
+        }
+
         const { GAME_CONFIG } = await import("../config.js");
 
         // Create game configuration
@@ -197,7 +176,7 @@ export default function GameView() {
               debug: false,
             },
           },
-          scene: GameScene,
+          scene: GameSceneClass,
           scale: {
             mode: Phaser.Scale.FIT,
             autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -245,7 +224,11 @@ export default function GameView() {
         }
 
         gameInitialized = true;
-        console.log("Game initialized successfully");
+        console.log(
+          `Game initialized successfully with ${
+            gameMode === "online" ? "OnlineGameScene" : "GameScene"
+          }`
+        );
       } catch (error) {
         console.error("Failed to initialize game:", error);
         setGameLoading(false);

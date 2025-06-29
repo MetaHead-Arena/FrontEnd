@@ -183,6 +183,27 @@ class SocketService {
         this.emit("player-input", data);
       });
 
+      // Individual input events matching backend structure
+      this.socket.on("move-left", (data) => {
+        console.log("Move-left input received:", data);
+        this.emit("move-left", data);
+      });
+
+      this.socket.on("move-right", (data) => {
+        console.log("Move-right input received:", data);
+        this.emit("move-right", data);
+      });
+
+      this.socket.on("jump", (data) => {
+        console.log("Jump input received:", data);
+        this.emit("jump", data);
+      });
+
+      this.socket.on("kick", (data) => {
+        console.log("Kick input received:", data);
+        this.emit("kick", data);
+      });
+
       // Ball synchronization events
       this.socket.on("ball-state", (data) => {
         console.log("Ball state received:", data);
@@ -215,41 +236,56 @@ class SocketService {
       this.socket.on("error", (data) => {
         console.error("Socket error received:", data);
         console.error("Error data type:", typeof data);
-        console.error("Error data keys:", data ? Object.keys(data) : "null/undefined");
+        console.error(
+          "Error data keys:",
+          data ? Object.keys(data) : "null/undefined"
+        );
         console.error("Error stack trace:", new Error().stack);
         console.error("Current timestamp:", new Date().toISOString());
         console.error("Socket ID:", this.socket?.id);
         console.error("Socket connected:", this.socket?.connected);
-        
+
         // Handle empty error objects
         if (!data || Object.keys(data).length === 0) {
-          console.warn("Received empty error object, this might indicate a server-side issue");
+          console.warn(
+            "Received empty error object, this might indicate a server-side issue"
+          );
           console.warn("Current socket state:", {
             connected: this.isConnected,
             playerCreated: this.playerCreated,
             roomJoined: this.roomJoined,
             currentRoomId: this.currentRoomId,
-            inMatchmaking: this.inMatchmaking
+            inMatchmaking: this.inMatchmaking,
           });
-          
+
           // Log recent socket activity to help debug
           console.warn("Recent socket activity context:");
-          console.warn("- Last known room operation:", this.currentRoomId ? "In room" : "No room");
-          console.warn("- Matchmaking status:", this.inMatchmaking ? "Active" : "Inactive");
+          console.warn(
+            "- Last known room operation:",
+            this.currentRoomId ? "In room" : "No room"
+          );
+          console.warn(
+            "- Matchmaking status:",
+            this.inMatchmaking ? "Active" : "Inactive"
+          );
           console.warn("- Player created:", this.playerCreated ? "Yes" : "No");
           console.warn("- Connection duration:", this.getConnectionDuration());
-          
+
           // Log browser/network context
           console.warn("Browser context:");
           console.warn("- User agent:", navigator.userAgent);
           console.warn("- Online status:", navigator.onLine);
-          console.warn("- Connection type:", (navigator as any).connection?.type || "unknown");
-          
+          console.warn(
+            "- Connection type:",
+            (navigator as any).connection?.type || "unknown"
+          );
+
           // Don't reset state for empty errors as they might be false positives
           // but emit the error for potential UI handling
-          this.emit("error", { 
-            type: "EMPTY_ERROR", 
-            message: "Empty error received from server - this may be a false positive",
+          this.emit("error", {
+            type: "EMPTY_ERROR",
+            message:
+              "Empty error received from server - this may be a false positive",
             timestamp: Date.now(),
             context: {
               socketId: this.socket?.id,
@@ -258,30 +294,38 @@ class SocketService {
               currentRoomId: this.currentRoomId,
               connectionDuration: this.getConnectionDuration(),
               userAgent: navigator.userAgent,
-              online: navigator.onLine
-            }
+              online: navigator.onLine,
+            },
           });
           return;
         }
-        
+
         // Handle specific error types
-        if (data.type === "GAME_ERROR" && data.message === "Player already in a room") {
-          console.warn("Detected 'Player already in a room' error, resetting room state");
+        if (
+          data.type === "GAME_ERROR" &&
+          data.message === "Player already in a room"
+        ) {
+          console.warn(
+            "Detected 'Player already in a room' error, resetting room state"
+          );
           this.forceResetRoomState();
         }
-        
+
         // Handle "Game not active" error - this is expected during game initialization
         if (data.type === "GOAL_ERROR" && data.message === "Game not active") {
-          console.warn("Game not active error - this is expected during game initialization");
+          console.warn(
+            "Game not active error - this is expected during game initialization"
+          );
           // Don't treat this as a critical error, just log it
           this.emit("error", {
             ...data,
             isRecoverable: true,
-            message: "Game not active yet - this is normal during initialization"
+            message:
+              "Game not active yet - this is normal during initialization",
           });
           return;
         }
-        
+
         // Log additional error details for debugging
         if (data.type) {
           console.error(`Error type: ${data.type}`);
@@ -292,7 +336,7 @@ class SocketService {
         if (data.timestamp) {
           console.error(`Error timestamp: ${data.timestamp}`);
         }
-        
+
         this.emit("error", data);
       });
 
@@ -368,20 +412,19 @@ class SocketService {
   checkAndFixRoomState(): boolean {
     const state = this.getCurrentRoomState();
     console.log("Current room state:", state);
-    
+
     // Check for inconsistencies
-    const hasInconsistency = (
+    const hasInconsistency =
       (state.roomJoined && !state.currentRoomId) ||
       (!state.roomJoined && state.currentRoomId) ||
-      (state.inMatchmaking && state.roomJoined)
-    );
-    
+      (state.inMatchmaking && state.roomJoined);
+
     if (hasInconsistency) {
       console.warn("Room state inconsistency detected, fixing...");
       this.forceResetRoomState();
       return true; // State was fixed
     }
-    
+
     return false; // No inconsistency found
   }
 
@@ -415,13 +458,15 @@ class SocketService {
     if (this.socket && this.isConnected && this.playerCreated) {
       // Check and fix any room state inconsistencies
       this.checkAndFixRoomState();
-      
+
       // Check if already in a room and reset if needed
       if (this.isInAnyRoom()) {
-        console.warn("Player already in a room, resetting state before creating new room");
+        console.warn(
+          "Player already in a room, resetting state before creating new room"
+        );
         this.forceResetRoomState();
       }
-      
+
       console.log("Emitting create-room");
       this.socket.emit("create-room");
     } else {
@@ -435,13 +480,15 @@ class SocketService {
     if (this.socket && this.isConnected && this.playerCreated) {
       // Check and fix any room state inconsistencies
       this.checkAndFixRoomState();
-      
+
       // Check if already in a room and reset if needed
       if (this.isInAnyRoom()) {
-        console.warn("Player already in a room, resetting state before joining new room");
+        console.warn(
+          "Player already in a room, resetting state before joining new room"
+        );
         this.forceResetRoomState();
       }
-      
+
       console.log("Emitting join-room-by-code:", roomCode);
       this.socket.emit("join-room-by-code", { roomCode });
     } else {
@@ -473,37 +520,63 @@ class SocketService {
     }
   }
 
-  // Input methods
-  sendInput(action: string, data: any): void {
+  // Input methods - Individual actions matching the backend
+  sendMoveLeft(pressed: boolean = true): void {
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting input:", action, data);
-      this.socket.emit(action, data);
+      console.log("Emitting move-left:", { pressed });
+      this.socket.emit("move-left", { pressed });
     } else {
       console.error(
-        "Socket not connected or not in room, cannot emit input"
+        "Socket not connected or not in room, cannot emit move-left"
       );
     }
   }
 
-  // Ball state synchronization
-  sendBallState(ballState: any): void {
+  sendMoveRight(pressed: boolean = true): void {
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting ball-state:", ballState);
-      this.socket.emit("ball-state", ballState);
+      console.log("Emitting move-right:", { pressed });
+      this.socket.emit("move-right", { pressed });
     } else {
       console.error(
-        "Socket not connected or not in room, cannot emit ball-state"
+        "Socket not connected or not in room, cannot emit move-right"
       );
     }
   }
 
-  // Player position synchronization
-  sendPlayerPosition(position: string, playerData: any): void {
+  sendJump(pressed: boolean = true): void {
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting player-position:", position, playerData);
+      console.log("Emitting jump:", { pressed });
+      this.socket.emit("jump", { pressed });
+    } else {
+      console.error("Socket not connected or not in room, cannot emit jump");
+    }
+  }
+
+  sendKick(pressed: boolean = true): void {
+    if (this.socket && this.isConnected && this.roomJoined) {
+      console.log("Emitting kick:", { pressed });
+      this.socket.emit("kick", { pressed });
+    } else {
+      console.error("Socket not connected or not in room, cannot emit kick");
+    }
+  }
+
+  // Enhanced player position synchronization matching demo
+  sendPlayerPosition(positionData: {
+    position: string;
+    player: {
+      x: number;
+      y: number;
+      velocityX: number;
+      velocityY: number;
+      direction: string;
+      isOnGround: boolean;
+    };
+  }): void {
+    if (this.socket && this.isConnected && this.roomJoined) {
+      console.log("Emitting player-position:", positionData);
       this.socket.emit("player-position", {
-        position,
-        player: playerData,
+        ...positionData,
         timestamp: Date.now(),
       });
     } else {
@@ -513,10 +586,32 @@ class SocketService {
     }
   }
 
-  // Goal scoring
+  // Enhanced ball state synchronization matching demo
+  sendBallState(ballData: {
+    ball: {
+      x: number;
+      y: number;
+      velocityX: number;
+      velocityY: number;
+    };
+  }): void {
+    if (this.socket && this.isConnected && this.roomJoined) {
+      console.log("Emitting ball-state:", ballData);
+      this.socket.emit("ball-state", {
+        ...ballData,
+        timestamp: Date.now(),
+      });
+    } else {
+      console.error(
+        "Socket not connected or not in room, cannot emit ball-state"
+      );
+    }
+  }
+
+  // Goal scoring method matching demo
   scoreGoal(scorer: string): void {
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting goal-scored:", scorer);
+      console.log("Emitting goal-scored:", { scorer });
       this.socket.emit("goal-scored", { scorer });
     } else {
       console.error(
@@ -525,14 +620,15 @@ class SocketService {
     }
   }
 
-  // Game end
-  endGame(finalScore: any, duration: number): void {
+  // Game end method matching demo
+  endGame(gameData: {
+    finalScore: { player1: number; player2: number };
+    duration: number;
+    winner: string;
+  }): void {
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting game-end:", finalScore, duration);
-      this.socket.emit("game-end", {
-        finalScore,
-        duration,
-      });
+      console.log("Emitting game-end:", gameData);
+      this.socket.emit("game-end", gameData);
     } else {
       console.error(
         "Socket not connected or not in room, cannot emit game-end"
@@ -540,7 +636,7 @@ class SocketService {
     }
   }
 
-  // Rematch methods
+  // Rematch methods matching demo
   requestRematch(): void {
     if (this.socket && this.isConnected && this.roomJoined) {
       console.log("Emitting request-rematch");
@@ -591,7 +687,11 @@ class SocketService {
     return this.roomCode;
   }
 
-  getRoomInfo(): { roomId: string | null; roomCode: string | null; playersInRoom: number } {
+  getRoomInfo(): {
+    roomId: string | null;
+    roomCode: string | null;
+    playersInRoom: number;
+  } {
     return {
       roomId: this.currentRoomId,
       roomCode: this.roomCode,
@@ -645,7 +745,7 @@ class SocketService {
     }
 
     console.log("Enabling socket event monitoring...");
-    
+
     // Monitor all events
     const originalEmit = this.socket.emit.bind(this.socket);
     this.socket.emit = (event: string, ...args: any[]) => {
@@ -664,7 +764,7 @@ class SocketService {
   // Disable event monitoring
   disableEventMonitoring(): void {
     if (!this.socket) return;
-    
+
     console.log("Disabling socket event monitoring...");
     // Note: This is a simplified version. In a real implementation,
     // you'd want to properly restore the original methods
@@ -674,19 +774,19 @@ class SocketService {
   forceReconnect(): Promise<void> {
     return new Promise((resolve, reject) => {
       console.log("Force reconnecting socket...");
-      
+
       // Disconnect current socket
       if (this.socket) {
         this.socket.disconnect();
         this.socket = null;
       }
-      
+
       // Reset all state
       this.isConnected = false;
       this.playerCreated = false;
       this.resetMatchmakingState();
       this.connectionStartTime = 0;
-      
+
       // Reconnect after a short delay
       setTimeout(async () => {
         try {

@@ -69,20 +69,63 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
         window.__HEADBALL_ROOM_DATA = data;
         console.log("Stored room data for position assignment:", data);
 
-        // Determine player position from server data
+        // Store socket ID globally for reliable access
         const socketId = socketService.getSocket()?.id;
+        window.__HEADBALL_SOCKET_ID = socketId;
+        console.log("Stored socket ID for position assignment:", socketId);
+
+        // Determine player position based on join order - more reliable approach
+        let playerPosition = null;
+
         if (data.players && Array.isArray(data.players) && socketId) {
-          const thisPlayer = data.players.find(
+          // Find our player index in the players array
+          const playerIndex = data.players.findIndex(
             (player) =>
               player.socketId === socketId ||
               player.id === socketId ||
               player.playerId === socketId
           );
 
-          if (thisPlayer) {
-            window.__HEADBALL_PLAYER_POSITION = thisPlayer.position;
-            console.log("Player position from server:", thisPlayer.position);
+          if (playerIndex !== -1) {
+            // First player (index 0) = player1, Second player (index 1) = player2
+            playerPosition = playerIndex === 0 ? "player1" : "player2";
+            console.log(
+              `Player found at index ${playerIndex}, assigned position: ${playerPosition}`
+            );
+          } else {
+            // Fallback: if we can't find the player, assume we're the latest to join
+            playerPosition = currentPlayers === 1 ? "player1" : "player2";
+            console.log(
+              `Player not found in array, using player count fallback: ${playerPosition}`
+            );
           }
+        } else {
+          // Fallback: use player count
+          playerPosition = currentPlayers === 1 ? "player1" : "player2";
+          console.log(
+            `Using simple player count assignment: ${playerPosition}`
+          );
+        }
+
+        window.__HEADBALL_PLAYER_POSITION = playerPosition;
+        console.log("Final player position assigned:", playerPosition);
+      }
+
+      // If this player joins a room that already has 2 players, auto-start the game
+      if (currentPlayers >= 2) {
+        console.log(
+          "Joined room with 2 players, starting game automatically..."
+        );
+        setWaitingForPlayers(false);
+        // Auto-start the game after a short delay (only if not already starting)
+        if (!bothPlayersReady) {
+          setBothPlayersReady(true);
+          setTimeout(() => {
+            setRoomJoined(false);
+            setWaitingForPlayers(false);
+            setBothPlayersReady(false);
+            onSelectModeRef.current("online");
+          }, 2000); // 2 second delay to show "loading game" message
         }
       }
     };
@@ -100,31 +143,71 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
         window.__HEADBALL_ROOM_DATA = data;
         console.log("Updated room data:", data);
 
-        // Update player position from server data
+        // Store socket ID globally for reliable access
         const socketId = socketService.getSocket()?.id;
-        if (data.players && Array.isArray(data.players) && socketId) {
-          const thisPlayer = data.players.find(
-            (player) =>
-              player.socketId === socketId ||
-              player.id === socketId ||
-              player.playerId === socketId
-          );
+        window.__HEADBALL_SOCKET_ID = socketId;
+        console.log("Updated socket ID for position assignment:", socketId);
 
-          if (thisPlayer) {
-            window.__HEADBALL_PLAYER_POSITION = thisPlayer.position;
+        // Only reassign position if we don't already have one set correctly
+        const existingPosition = window.__HEADBALL_PLAYER_POSITION;
+
+        if (!existingPosition) {
+          console.log("No existing position found, assigning new position...");
+
+          // Update player position using the same reliable logic
+          let playerPosition = null;
+
+          if (data.players && Array.isArray(data.players) && socketId) {
+            // Find our player index in the players array
+            const playerIndex = data.players.findIndex(
+              (player) =>
+                player.socketId === socketId ||
+                player.id === socketId ||
+                player.playerId === socketId
+            );
+
+            if (playerIndex !== -1) {
+              // First player (index 0) = player1, Second player (index 1) = player2
+              playerPosition = playerIndex === 0 ? "player1" : "player2";
+              console.log(
+                `Player found at index ${playerIndex}, assigned position: ${playerPosition}`
+              );
+            } else {
+              // Fallback: if we can't find the player, assume we're the latest to join
+              playerPosition = currentPlayers === 1 ? "player1" : "player2";
+              console.log(
+                `Player not found in array, using player count fallback: ${playerPosition}`
+              );
+            }
+          } else {
+            // Fallback: use player count
+            playerPosition = currentPlayers === 1 ? "player1" : "player2";
             console.log(
-              "Updated player position from server:",
-              thisPlayer.position
+              `Using simple player count assignment: ${playerPosition}`
             );
           }
+
+          window.__HEADBALL_PLAYER_POSITION = playerPosition;
+          console.log("New player position assigned:", playerPosition);
+        } else {
+          console.log(`Keeping existing position: ${existingPosition}`);
         }
       }
 
-      // If we have 2 players, show ready button instead of auto-starting
+      // If we have 2 players, start the game automatically
       if (currentPlayers >= 2) {
-        console.log("Two players in room, showing ready button...");
+        console.log("Two players in room, starting game automatically...");
         setWaitingForPlayers(false);
-        // Don't auto-start, let players click ready
+        // Auto-start the game after a short delay (only if not already starting)
+        if (!bothPlayersReady) {
+          setBothPlayersReady(true);
+          setTimeout(() => {
+            setRoomJoined(false);
+            setWaitingForPlayers(false);
+            setBothPlayersReady(false);
+            onSelectModeRef.current("online");
+          }, 2000); // 2 second delay to show "loading game" message
+        }
       }
     };
 
@@ -262,17 +345,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const handleCancelMatchmaking = () => {
     setIsMatchmaking(false);
     socketService.cancelMatchmaking();
-  };
-
-  const handleReadyClick = () => {
-    console.log("Player clicked ready");
-
-    // Use Phaser's handleReady function
-    if (typeof window !== "undefined" && window.__HEADBALL_HANDLE_READY) {
-      window.__HEADBALL_HANDLE_READY();
-    } else {
-      console.warn("Phaser handleReady function not available");
-    }
   };
 
   const handleResetConnection = async () => {
@@ -594,7 +666,7 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
               {roomJoined &&
                 playersInRoom >= 2 &&
                 !bothPlayersReady &&
-                "READY UP!"}
+                "LOADING GAME..."}
               {waitingForPlayers && "WAITING FOR PLAYERS"}
               {bothPlayersReady && "STARTING GAME..."}
             </h2>
@@ -638,7 +710,7 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
                           marginBottom: "10px",
                         }}
                       >
-                        Both players joined! Click READY to start.
+                        Both players joined! Loading game...
                       </div>
                     </>
                   )}
@@ -672,23 +744,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
                 />
               </div>
             )}
-
-            {/* Ready button - show when both players are in room but not ready */}
-            {roomJoined &&
-              playersInRoom >= 2 &&
-              !bothPlayersReady && (
-                <PixelButton
-                  variant="menu"
-                  size="large"
-                  onClick={handleReadyClick}
-                  style={{
-                    backgroundColor: "#059669",
-                    borderColor: "#047857",
-                  }}
-                >
-                  READY UP!
-                </PixelButton>
-              )}
 
             {/* Cancel button - only show during matchmaking */}
             {isMatchmaking && (

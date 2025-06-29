@@ -41,6 +41,10 @@ export class GameScene extends Phaser.Scene {
 
     // Ball state sending
     this.lastBallStateSend = null;
+
+    // Waiting screen references
+    this.waitingStatusText = null;
+    this.readyStatusText = null;
   }
 
   init(data) {
@@ -53,9 +57,49 @@ export class GameScene extends Phaser.Scene {
     // Set global player position for online games
     if (this.gameMode === "online" && typeof window !== "undefined") {
       this.playerPosition = window.__HEADBALL_PLAYER_POSITION || null;
+
+      // Debug: Check if position was properly assigned
+      console.log("=== POSITION ASSIGNMENT DEBUG ===");
+      console.log("Window player position:", window.__HEADBALL_PLAYER_POSITION);
+      console.log("Room data:", window.__HEADBALL_ROOM_DATA);
+
+      // If position is still null or invalid, force assignment
+      if (
+        !this.playerPosition ||
+        (this.playerPosition !== "player1" && this.playerPosition !== "player2")
+      ) {
+        console.warn("Invalid player position detected, forcing assignment...");
+
+        // Use socket ID to determine position consistently
+        const socketId =
+          window.__HEADBALL_SOCKET_ID ||
+          (typeof window.socketService !== "undefined"
+            ? window.socketService.getSocket()?.id
+            : null);
+        if (socketId) {
+          // Simple hash-based assignment for consistency
+          const hash = socketId.split("").reduce((a, b) => {
+            a = (a << 5) - a + b.charCodeAt(0);
+            return a & a;
+          }, 0);
+          this.playerPosition =
+            Math.abs(hash) % 2 === 0 ? "player1" : "player2";
+          console.log(
+            `Forced position assignment based on socket hash: ${this.playerPosition}`
+          );
+          window.__HEADBALL_PLAYER_POSITION = this.playerPosition;
+        } else {
+          // Ultimate fallback
+          this.playerPosition = "player1";
+          console.log("Ultimate fallback: assigned player1");
+          window.__HEADBALL_PLAYER_POSITION = this.playerPosition;
+        }
+      }
+
       this.isBallAuthority = this.playerPosition === "player1"; // Player 1 is ball authority
-      console.log("Player position assigned:", this.playerPosition);
+      console.log("Final player position assigned:", this.playerPosition);
       console.log("Ball authority:", this.isBallAuthority);
+      console.log("=== END POSITION DEBUG ===");
     }
   }
 
@@ -78,6 +122,7 @@ export class GameScene extends Phaser.Scene {
     this.pausedForGoal = false;
     this.gameTime = GAME_CONFIG.GAME_DURATION;
     this.timerEvent = null;
+    // For online games, keep gameStarted false until both players are ready
     this.gameStarted = false;
     this.powerups = [];
     this.powerupSpawnTimer = null;
@@ -137,8 +182,13 @@ export class GameScene extends Phaser.Scene {
     this.createBall();
     this.createUI();
     this.createPlayerStatsDisplay();
-    this.startGameTimer();
-    this.startPowerupSystem();
+
+    // Only start game systems for non-online modes
+    if (this.gameMode !== "online") {
+      this.startGameTimer();
+      this.startPowerupSystem();
+    }
+
     this.physics.add.collider(this.player1.sprite, this.player2.sprite);
 
     // Initialize online multiplayer if needed
@@ -241,6 +291,18 @@ export class GameScene extends Phaser.Scene {
       this.handleRemotePlayerInput(data);
     });
 
+    // Listen for player ready events
+    this.socketService.on("player-ready", (data) => {
+      console.log("Received player-ready event:", data);
+      this.handlePlayerReady(data);
+    });
+
+    // Listen for both players ready event
+    this.socketService.on("all-players-ready", (data) => {
+      console.log("All players ready, starting game:", data);
+      this.handleAllPlayersReady(data);
+    });
+
     console.log("Online event listeners set up successfully");
   }
 
@@ -259,6 +321,10 @@ export class GameScene extends Phaser.Scene {
       this.overlayGroup.clear(true, true);
       this.overlayGroup = null;
     }
+
+    // Clear waiting screen references
+    this.waitingStatusText = null;
+    this.readyStatusText = null;
 
     // Reset only necessary game state (don't call resetGameState as it sets gameStarted = false)
     this.player1Score = 0;
@@ -421,6 +487,11 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(100, () => {
       console.log("Game engine fully loaded and ready");
 
+      // For online games, show loading screen first
+      if (this.gameMode === "online") {
+        this.showLoadingScreen();
+      }
+
       // Call the global callback if available (for online games)
       if (typeof window !== "undefined" && window.__HEADBALL_GAME_LOADED) {
         window.__HEADBALL_GAME_LOADED();
@@ -434,6 +505,13 @@ export class GameScene extends Phaser.Scene {
         window.__HEADBALL_CANCEL_READY = () => {
           this.cancelReady();
         };
+      }
+
+      // After everything is loaded, show ready button for online games
+      if (this.gameMode === "online") {
+        this.time.delayedCall(1500, () => {
+          this.showReadyButton();
+        });
       }
     });
   }
@@ -627,11 +705,12 @@ export class GameScene extends Phaser.Scene {
    * - Only works in online mode
    * - Checks if game hasn't started yet
    * - Emits ready event to server via socket service
-   * - Shows a comprehensive ready up overlay with proper UI
+   * - Shows a waiting screen until both players are ready
    * - Can be triggered by:
    *   - Pressing 'R' key
    *   - Pressing 'Enter' key
    *   - Calling from React UI via window.__HEADBALL_HANDLE_READY()
+   *   - Clicking the ready button
    *
    * The overlay is automatically cleared when the game starts
    * via the handleGameStarted function.
@@ -655,17 +734,132 @@ export class GameScene extends Phaser.Scene {
 
     console.log("Player clicked ready from Phaser");
 
-    // Emit ready event to server
-    this.socketService.emitPlayerReady();
+    // Emit ready event to server using the correct method
+    try {
+      if (typeof this.socketService.emitPlayerReady === "function") {
+        this.socketService.emitPlayerReady();
+      } else {
+        // Fallback to direct emit
+        this.socketService.emit("player-ready", {
+          playerId: this.socketService.getSocket()?.id,
+          playerPosition: this.playerPosition,
+        });
+      }
+      console.log("Ready event emitted successfully");
+    } catch (error) {
+      console.error("Failed to emit ready event:", error);
+    }
 
-    // Show comprehensive ready up overlay
-    this.showReadyUpOverlay();
+    // Show waiting screen
+    this.showWaitingForPlayersScreen();
   }
 
   /**
-   * Show a dedicated ready up overlay with proper UI design
+   * Cancel ready up and return to normal state
    */
-  showReadyUpOverlay() {
+  cancelReady() {
+    console.log("Player cancelled ready up");
+
+    // Clear the overlay
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
+
+    // Note: In a real implementation, you might want to emit a "cancel-ready" event
+    // to the server, but for now we just clear the UI
+    // this.socketService.emitCancelReady();
+  }
+
+  /**
+   * Show loading screen with animated ball
+   */
+  showLoadingScreen() {
+    if (this.overlayGroup && this.overlayGroup.children) {
+      this.overlayGroup.clear(true, true);
+    }
+    this.overlayGroup = null;
+    this.overlayGroup = this.add.group();
+
+    // Semi-transparent background
+    const overlay = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH,
+        GAME_CONFIG.CANVAS_HEIGHT,
+        0x000000,
+        0.8
+      )
+      .setDepth(9999);
+    this.overlayGroup.add(overlay);
+
+    // Loading text in bottom left
+    const loadingText = this.add
+      .text(50, GAME_CONFIG.CANVAS_HEIGHT - 80, "Game Loading", {
+        fontFamily: '"Press Start 2P"',
+        fontSize: "24px",
+        fill: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(loadingText);
+
+    // Animated ball in bottom left
+    const loadingBall = this.add
+      .image(250, GAME_CONFIG.CANVAS_HEIGHT - 80, "ball")
+      .setScale(0.3)
+      .setDepth(10000);
+    this.overlayGroup.add(loadingBall);
+
+    // Animate the ball (spinning and bouncing)
+    this.tweens.add({
+      targets: loadingBall,
+      rotation: Math.PI * 2,
+      duration: 1000,
+      repeat: -1,
+      ease: "Linear",
+    });
+
+    this.tweens.add({
+      targets: loadingBall,
+      y: GAME_CONFIG.CANVAS_HEIGHT - 100,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // Animate loading text dots
+    const dots = this.add
+      .text(320, GAME_CONFIG.CANVAS_HEIGHT - 80, "...", {
+        fontFamily: '"Press Start 2P"',
+        fontSize: "24px",
+        fill: "#fde047",
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(dots);
+
+    this.tweens.add({
+      targets: dots,
+      alpha: 0.3,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+      ease: "Power2",
+    });
+  }
+
+  /**
+   * Show ready button after game has loaded
+   */
+  showReadyButton() {
+    // Clear loading screen
     if (this.overlayGroup && this.overlayGroup.children) {
       this.overlayGroup.clear(true, true);
     }
@@ -690,11 +884,11 @@ export class GameScene extends Phaser.Scene {
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
         GAME_CONFIG.CANVAS_HEIGHT / 2 - 120,
-        "READY UP!",
+        "GAME READY!",
         {
           fontFamily: '"Press Start 2P"',
           fontSize: "48px",
-          fill: "#fde047",
+          fill: "#00ff00",
           stroke: "#000000",
           strokeThickness: 6,
           align: "center",
@@ -704,12 +898,183 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10000);
     this.overlayGroup.add(titleText);
 
-    // Status message
+    // Player info
+    const playerInfoText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 40,
+        `You are: ${this.playerPosition?.toUpperCase() || "UNKNOWN"}`,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(playerInfoText);
+
+    // Controls info
+    const controls = this.playerPosition === "player1" ? "Arrow Keys" : "WASD";
+    const side = this.playerPosition === "player1" ? "Right Side" : "Left Side";
+    const controlsText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 10,
+        `Controls: ${controls} | Position: ${side}`,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "16px",
+          fill: "#fde047",
+          stroke: "#000000",
+          strokeThickness: 2,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(controlsText);
+
+    // Ready button
+    const readyButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 60,
+        300,
+        80,
+        0x22c55e,
+        1
+      )
+      .setStrokeStyle(4, 0x16a34a)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(readyButton);
+
+    const readyText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 60,
+        "READY UP!",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "24px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(readyText);
+
+    // Button hover effects
+    readyButton.on("pointerover", () => {
+      readyButton.setFillStyle(0x15803d);
+      this.tweens.add({
+        targets: [readyButton, readyText],
+        scaleX: 1.05,
+        scaleY: 1.05,
+        duration: 100,
+        ease: "Power2",
+      });
+    });
+
+    readyButton.on("pointerout", () => {
+      readyButton.setFillStyle(0x22c55e);
+      this.tweens.add({
+        targets: [readyButton, readyText],
+        scaleX: 1.0,
+        scaleY: 1.0,
+        duration: 100,
+        ease: "Power2",
+      });
+    });
+
+    // Ready button functionality
+    readyButton.on("pointerdown", () => {
+      this.handleReady();
+    });
+
+    readyText.setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+      this.handleReady();
+    });
+
+    // Add pulsing effect to title
+    this.tweens.add({
+      targets: titleText,
+      scaleX: 1.05,
+      scaleY: 1.05,
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: "Power2",
+    });
+
+    // Add glow effect to ready button
+    this.tweens.add({
+      targets: readyButton,
+      scaleX: 1.02,
+      scaleY: 1.02,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: "Power2",
+    });
+  }
+
+  /**
+   * Show waiting screen after player clicks ready
+   */
+  showWaitingForPlayersScreen() {
+    // Clear current overlay
+    if (this.overlayGroup && this.overlayGroup.children) {
+      this.overlayGroup.clear(true, true);
+    }
+    this.overlayGroup = null;
+    this.overlayGroup = this.add.group();
+
+    // Semi-transparent background
+    const overlay = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH,
+        GAME_CONFIG.CANVAS_HEIGHT,
+        0x000000,
+        0.8
+      )
+      .setDepth(9999);
+    this.overlayGroup.add(overlay);
+
+    // Main title
+    const titleText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 100,
+        "WAITING FOR PLAYERS",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "36px",
+          fill: "#fde047",
+          stroke: "#000000",
+          strokeThickness: 4,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(titleText);
+
+    // Status text
     const statusText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
         GAME_CONFIG.CANVAS_HEIGHT / 2 - 40,
-        "Waiting for opponent...",
+        "You are ready! Waiting for opponent...",
         {
           fontFamily: '"Press Start 2P"',
           fontSize: "20px",
@@ -723,28 +1088,28 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10000);
     this.overlayGroup.add(statusText);
 
-    // Animated dots
-    const dots = this.add
+    // Animated loading indicator
+    const loadingDots = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 10,
-        "...",
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 20,
+        "●●●",
         {
           fontFamily: '"Press Start 2P"',
           fontSize: "32px",
-          fill: "#fde047",
+          fill: "#22c55e",
           stroke: "#000000",
-          strokeThickness: 4,
+          strokeThickness: 3,
           align: "center",
         }
       )
       .setOrigin(0.5)
       .setDepth(10000);
-    this.overlayGroup.add(dots);
+    this.overlayGroup.add(loadingDots);
 
-    // Animate the dots
+    // Animate loading dots
     this.tweens.add({
-      targets: dots,
+      targets: loadingDots,
       alpha: 0.3,
       duration: 800,
       yoyo: true,
@@ -752,168 +1117,85 @@ export class GameScene extends Phaser.Scene {
       ease: "Power2",
     });
 
-    // Player info box
-    const playerInfoBox = this.add
-      .rectangle(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 80,
-        400,
-        120,
-        0x22223a,
-        0.9
-      )
-      .setStrokeStyle(4, 0xfacc15)
-      .setDepth(10001);
-    this.overlayGroup.add(playerInfoBox);
-
-    // Player position info
-    const playerPositionText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 60,
-        `You are: ${this.playerPosition?.toUpperCase() || "UNKNOWN"}`,
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "16px",
-          fill: "#ffffff",
-          stroke: "#000000",
-          strokeThickness: 2,
-          align: "center",
-        }
-      )
-      .setOrigin(0.5)
-      .setDepth(10002);
-    this.overlayGroup.add(playerPositionText);
-
-    // Controls info
-    const controls = this.playerPosition === "player1" ? "Arrow Keys" : "WASD";
-    const controlsText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 85,
-        `Controls: ${controls}`,
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "14px",
-          fill: "#fde047",
-          stroke: "#000000",
-          strokeThickness: 2,
-          align: "center",
-        }
-      )
-      .setOrigin(0.5)
-      .setDepth(10002);
-    this.overlayGroup.add(controlsText);
-
-    // Side indicator
-    const side = this.playerPosition === "player1" ? "Right Side" : "Left Side";
-    const sideText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 105,
-        `Position: ${side}`,
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "14px",
-          fill: "#fde047",
-          stroke: "#000000",
-          strokeThickness: 2,
-          align: "center",
-        }
-      )
-      .setOrigin(0.5)
-      .setDepth(10002);
-    this.overlayGroup.add(sideText);
-
-    // Cancel button
-    const cancelButton = this.add
-      .rectangle(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 180,
-        200,
-        50,
-        0xdc2626,
-        1
-      )
-      .setStrokeStyle(3, 0xb91c1c)
-      .setDepth(10001)
-      .setInteractive({ useHandCursor: true });
-    this.overlayGroup.add(cancelButton);
-
-    const cancelText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 180,
-        "CANCEL READY",
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "16px",
-          fill: "#ffffff",
-          stroke: "#000000",
-          strokeThickness: 2,
-          align: "center",
-        }
-      )
-      .setOrigin(0.5)
-      .setDepth(10002);
-    this.overlayGroup.add(cancelText);
-
-    // Button hover effects
-    cancelButton.on("pointerover", () => {
-      cancelButton.setFillStyle(0xef4444);
-    });
-
-    cancelButton.on("pointerout", () => {
-      cancelButton.setFillStyle(0xdc2626);
-    });
-
-    // Cancel ready functionality
-    cancelButton.on("pointerdown", () => {
-      this.cancelReady();
-    });
-
-    cancelText.setInteractive({ useHandCursor: true }).on("pointerdown", () => {
-      this.cancelReady();
-    });
-
-    // Add some visual effects
+    // Pulse effect for title
     this.tweens.add({
       targets: titleText,
-      scaleX: 1.05,
-      scaleY: 1.05,
-      duration: 1000,
+      scaleX: 1.03,
+      scaleY: 1.03,
+      duration: 1200,
       yoyo: true,
       repeat: -1,
       ease: "Power2",
     });
 
-    // Pulse effect for the player info box
-    this.tweens.add({
-      targets: playerInfoBox,
-      scaleX: 1.02,
-      scaleY: 1.02,
-      duration: 1500,
-      yoyo: true,
-      repeat: -1,
-      ease: "Power2",
-    });
+    // Ready status indicator
+    const readyStatus = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 80,
+        `✓ ${this.playerPosition?.toUpperCase()} READY`,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "18px",
+          fill: "#22c55e",
+          stroke: "#000000",
+          strokeThickness: 2,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(readyStatus);
+
+    // Store reference for updating
+    this.waitingStatusText = statusText;
+    this.readyStatusText = readyStatus;
   }
 
   /**
-   * Cancel ready up and return to normal state
+   * Handle player ready event from socket
    */
-  cancelReady() {
-    console.log("Player cancelled ready up");
+  handlePlayerReady(data) {
+    console.log("Player ready event received:", data);
 
-    // Clear the overlay
-    if (this.overlayGroup) {
-      this.overlayGroup.clear(true, true);
-      this.overlayGroup = null;
+    // Update waiting screen if visible
+    if (this.waitingStatusText && this.readyStatusText) {
+      const otherPosition =
+        this.playerPosition === "player1" ? "player2" : "player1";
+
+      if (data.playerPosition === otherPosition) {
+        this.waitingStatusText.setText("Both players ready! Starting game...");
+        this.readyStatusText.setText(
+          `✓ ${this.playerPosition?.toUpperCase()} READY\n✓ ${otherPosition.toUpperCase()} READY`
+        );
+      }
     }
+  }
 
-    // Note: In a real implementation, you might want to emit a "cancel-ready" event
-    // to the server, but for now we just clear the UI
-    // this.socketService.emitCancelReady();
+  /**
+   * Handle all players ready event
+   */
+  handleAllPlayersReady(data) {
+    console.log("All players ready, game will start soon:", data);
+
+    // Update status text
+    if (this.waitingStatusText) {
+      this.waitingStatusText.setText("All players ready! Starting in 3...");
+
+      // Countdown before starting
+      let countdown = 3;
+      const countdownInterval = setInterval(() => {
+        countdown--;
+        if (countdown > 0) {
+          this.waitingStatusText.setText(
+            `All players ready! Starting in ${countdown}...`
+          );
+        } else {
+          this.waitingStatusText.setText("Game starting now!");
+          clearInterval(countdownInterval);
+        }
+      }, 1000);
+    }
   }
 
   createFieldBoundaries() {
@@ -1378,7 +1660,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   startPowerupSystem() {
+    // Don't start powerups unless game has actually started
+    if (!this.gameStarted) {
+      console.log("Powerup system not started - game not yet started");
+      return;
+    }
+
     this.schedulePowerupSpawn();
+    console.log("Powerup system started");
   }
 
   schedulePowerupSpawn() {
@@ -1824,8 +2113,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   startGameTimer() {
+    // Don't start timer unless game has actually started
+    if (!this.gameStarted) {
+      console.log("Timer not started - game not yet started");
+      return;
+    }
+
     this.gameTime = GAME_CONFIG.GAME_DURATION;
-    this.gameStarted = true;
     this.updateTimerDisplay();
 
     this.timerEvent = this.time.addEvent({
@@ -1834,6 +2128,8 @@ export class GameScene extends Phaser.Scene {
       callbackScope: this,
       loop: true,
     });
+
+    console.log("Game timer started");
   }
 
   updateTimer() {
@@ -2025,6 +2321,9 @@ export class GameScene extends Phaser.Scene {
   update() {
     if (this.isPaused || this.gameOver || this.pausedForGoal) return;
     if (!this.player1 || !this.player2 || !this.ball) return;
+
+    // For online games, don't update game logic until game has started
+    if (this.gameMode === "online" && !this.gameStarted) return;
 
     this.player1.update();
     this.player2.update();
