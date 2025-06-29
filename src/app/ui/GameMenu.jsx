@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 // import GameBackGround from "../assets/GameBackGround.png"; // Not needed in Next.js
 import PixelButton from "./PixelButton";
 import PlayerSelect from "./PlayerSelect";
@@ -8,6 +8,9 @@ import LevelProgressBar from "./LevelProgressBar";
 import CoinDisplay from "./CoinDisplay";
 import CoinModal from "./CoinModal";
 import { useReadContract } from "wagmi";
+import { PLAYER_NFT_ADDRESS, PLAYER_NFT_ABI } from "../lib/contracts/playerNFT";
+import { useNFTMetadata } from "../lib/useNFTMetadata";
+import PlayerCard from "./PlayerCard";
 
 import { useAccount } from "wagmi";
 import CustomConnectButton from "./CustomConnectButton";
@@ -19,7 +22,7 @@ const GameBackGround = "/GameBackGround.png";
 const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const { address, isConnected } = useAccount();
   const { isAuthenticated } = useAuth();
-  const [selectedPlayer, setSelectedPlayer] = useState(1);
+  const [selectedPlayer, setSelectedPlayer] = useState(0);
   const [showChestModal, setShowChestModal] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
   const [playerCreated, setPlayerCreated] = useState(false);
@@ -28,6 +31,87 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const [playersInRoom, setPlayersInRoom] = useState(0);
   const [waitingForPlayers, setWaitingForPlayers] = useState(false);
   const [showCoinTransferModal, setShowCoinTransferModal] = useState(false);
+  const [resolvedImages, setResolvedImages] = useState([]);
+  // const [selectedPlayer, setSelectedPlayer] = useState(0);
+
+  const playerUrls = [
+    // [
+    //   // Replace the first entry with the direct image URL
+    //   "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreihhywpxhmlrewwkn5c2m5by4itddscpvn4osmmdmvoxecplzrsfkm",
+    //   // ...other image URLs or metadata links...
+    // ],
+    [
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreiaubraqacngtzbea7ha64l4al5q7hmwisap4kj47qfrvtep2coylu",
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreicwlut5fat6egxcweyeak2uognc43lm7mtjgxtdiguw2gcwxvw33i",
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreiabd2hyz5yknzs5h6hg7l7xcfhhzdd6umrrcdcf6yolyeloytsdry",
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreifmmvtiuxfq4wpqdr5lgptwr4lxj2rcztntw74kqc2ildfovcv2ny",
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreih6ik3awoqmbga3qfmyaurfhfoxcvw6imet352irz4h7qybslmi3q",
+    ],
+    [
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreidjvljmufi2qbteidziz23ea7xlxey5ggxl2w2wk4ck3ojyb4y7oi",
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreicldumkg2ytahxb6lpyksk6q5nsrp2g7sk7bzzwautweqtqpnnr5e",
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreie3ppzd3zyzlszg6ivhdhghcc7heynjnrhkrl2sng7lwu4lmybeui",
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreif5nggmkgibbe3hn47l7lzkkbaid7rump2s7pyi5fazzfhx4ajkj4",
+    ],
+    [
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreie3fkgdsqfjjsifqpgwmxnafcgnb3onv4hy6pyrthwge37fqmerei",
+      "https://jade-electrical-earwig-826.mypinata.cloud/ipfs/bafkreihdqwydegzuw3tilmbx4iflvacsd54efjvq2v3mbyyqct5gnuyocy",
+    ],
+  ];
+  const {
+    data: tokenCount,
+    isLoading: isNFTLoading,
+    error: nftError,
+  } = useReadContract({
+    address: PLAYER_NFT_ADDRESS,
+    abi: PLAYER_NFT_ABI,
+    functionName: "getTokenCount",
+    args: [address],
+    enabled: !!address,
+  });
+  console.log("GameMenu tokenCount:", tokenCount);
+
+  const ownedImages = useMemo(() => {
+    if (!tokenCount) return [];
+    const ans = [];
+    for (let i = 0; i < tokenCount.length; i++) {
+      if (tokenCount[i] > 0) {
+        ans.push({
+          url: playerUrls[i][0], // This is now a direct image URL
+          type: i,
+          idx: 0,
+          amount: tokenCount[i].toString(),
+        });
+      }
+    }
+    return ans;
+  }, [tokenCount]);
+  useEffect(() => {
+    const fetchImages = async () => {
+      if (!ownedImages.length) {
+        setResolvedImages([]);
+        return;
+      }
+      const results = await Promise.all(
+        ownedImages.map(async (item) => {
+          try {
+            const res = await fetch(item.url);
+            const data = await res.json();
+            return {
+              ...item,
+              resolvedUrl: data.image || item.url, // Use the image field from metadata
+            };
+          } catch (e) {
+            return { ...item, resolvedUrl: item.url };
+          }
+        })
+      );
+      setResolvedImages(results);
+    };
+    fetchImages();
+  }, [ownedImages]);
+  console.log(ownedImages);
+  const nftMetadataList = useNFTMetadata(ownedImages);
 
   // Listen for player-created event and check initial state
   useEffect(() => {
@@ -107,12 +191,20 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   }, [isAuthenticated]);
 
   const handlePlayerChange = (direction) => {
-    if (direction === "next") {
-      setSelectedPlayer((prev) => (prev === 4 ? 1 : prev + 1));
-    } else {
-      setSelectedPlayer((prev) => (prev === 1 ? 4 : prev - 1));
-    }
+    if (!ownedImages.length) return;
+    setSelectedPlayer((prev) =>
+      direction === "next"
+        ? (prev + 1) % ownedImages.length
+        : (prev - 1 + ownedImages.length) % ownedImages.length
+    );
   };
+  // const handlePlayerChange = (direction) => {
+  //   if (direction === "next") {
+  //     setSelectedPlayer((prev) => (prev === 4 ? 1 : prev + 1));
+  //   } else {
+  //     setSelectedPlayer((prev) => (prev === 1 ? 4 : prev - 1));
+  //   }
+  // };
 
   const handleOnlineClick = () => {
     // Prevent multiple clicks
@@ -158,7 +250,10 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           <div className={`${isConnected ? "hidden" : "block"} `}>
             <CustomConnectButton />
           </div>
-          <span className={"address" + (isConnected ? " block" : " hidden")}>
+          <span
+            className={"address" + (isConnected ? " block" : " hidden")}
+            style={{ display: "block", marginBottom: 12 }} // Add margin here
+          >
             {address?.slice(0, 6)}...{address?.slice(-4)}
           </span>
         </div>
@@ -181,7 +276,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       >
         <MetaheadTitle />
       </div>
-
       {/* Player Selector - Positioned on the left */}
       <div
         style={{
@@ -194,12 +288,13 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       >
         {/* Level and Coin UI */}
         <div className={`${isConnected ? "block" : "hidden"} mb-4`}>
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 12 }}>
             <LevelProgressBar level={1} xp={0} />
             <CoinDisplay />
           </div>
           <PlayerSelect
-            selectedPlayer={selectedPlayer}
+            ownedImages={ownedImages}
+            selectedIdx={selectedPlayer}
             onPlayerChange={handlePlayerChange}
           />
           {/* Redeem Chests Section */}
@@ -246,7 +341,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           </div>
         </div>
       </div>
-
       {/* Game Buttons - Positioned on the right */}
       <div
         style={{
@@ -271,6 +365,7 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           <PixelButton
             variant="menu"
             size="hald-custom"
+            style={{ fontSize: 25, padding: "30px 55px" }}
             onClick={handleOnlineClick}
             disabled={isMatchmaking || roomJoined}
           >
@@ -313,16 +408,20 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
             1 VS AI
           </PixelButton>
         </div>
-        <PixelButton variant="menu" size="large" onClick={onMarketplace}>
+        <PixelButton
+          variant="menu"
+          size="large"
+          style={{ fontSize: 25, padding: "30px 55px" }}
+          onClick={onMarketplace}
+        >
           MARKETPLACE
         </PixelButton>
       </div>
-
       <CoinModal
         open={showCoinTransferModal}
         onClose={() => setShowCoinTransferModal(false)}
       >
-        <span
+        <div
           style={{
             color: "#fde047",
             fontFamily: '"Press Start 2P", monospace',
@@ -331,21 +430,39 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
             textAlign: "center",
           }}
         >
-          Cross-chain coin transfer coming soon!
-        </span>
+          Select a player to transfer coins to:
+        </div>
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            justifyContent: "center",
+            gap: 16,
+            maxHeight: 350,
+            overflowY: "auto",
+          }}
+        >
+          {nftMetadataList.length === 0 && (
+            <div style={{ color: "#fff" }}>Loading your players...</div>
+          )}
+          {nftMetadataList.map((item, idx) =>
+            item.metadata ? (
+              <PlayerCard key={idx} metadata={item.metadata} />
+            ) : null
+          )}
+        </div>
         <PixelButton
           variant="menu"
           size="half-custom"
           onClick={() => setShowCoinTransferModal(false)}
+          style={{ marginTop: 24 }}
         >
           CLOSE
         </PixelButton>
       </CoinModal>
-
       {showChestModal && (
         <ChestRedeemModal onClose={() => setShowChestModal(false)} />
       )}
-
       {/* Matchmaking Modal */}
       {(isMatchmaking || roomJoined || waitingForPlayers) && (
         <div
@@ -460,7 +577,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           </div>
         </div>
       )}
-
       {/* CSS for loading animation */}
       <style jsx>{`
         @keyframes spin {
