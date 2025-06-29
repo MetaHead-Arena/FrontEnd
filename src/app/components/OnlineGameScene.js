@@ -586,8 +586,20 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   handleReady() {
+    console.log("=== PLAYER CLICKED READY ===");
+    console.log("Current local player position:", this.playerPosition);
+    console.log("Current ready states before click:", {
+      localReady: this.isPlayerReady,
+      opponentReady: this.isOpponentReady,
+    });
+
     if (this.gameStarted) {
       console.log("Game already started, cannot ready up");
+      return;
+    }
+
+    if (this.isPlayerReady) {
+      console.log("Player already ready, ignoring duplicate ready click");
       return;
     }
 
@@ -606,28 +618,38 @@ export class OnlineGameScene extends Phaser.Scene {
       return;
     }
 
-    console.log("Player clicked ready from Online Phaser");
+    console.log("✅ Player ready validation passed, proceeding...");
     console.log(
       "Current room state:",
       this.socketService.getCurrentRoomState()
     );
 
-    // Mark this player as ready locally
+    // Mark this player as ready locally first
     this.isPlayerReady = true;
+    console.log("✅ Local ready state set to true");
 
     // Emit ready event to server using the correct method
     try {
+      console.log("📡 Emitting player-ready to server...");
       this.socketService.emitPlayerReady();
-      console.log("Ready event emitted successfully");
+      console.log("✅ Ready event emitted successfully");
+      console.log("Current ready states after emitting:", {
+        localPlayer: this.isPlayerReady,
+        opponent: this.isOpponentReady,
+        bothReady: this.isPlayerReady && this.isOpponentReady,
+      });
     } catch (error) {
-      console.error("Failed to emit ready event:", error);
+      console.error("❌ Failed to emit ready event:", error);
       // Reset ready state on failure
       this.isPlayerReady = false;
+      console.log("Ready state reset due to emit failure");
       return;
     }
 
-    // Show waiting screen immediately
+    console.log("🔄 Showing waiting screen...");
+    // Show waiting screen immediately (this will be updated by handlePlayerReady events)
     this.showWaitingForPlayersScreen();
+    console.log("=== END PLAYER CLICKED READY ===");
   }
 
   startGameTimer() {
@@ -958,17 +980,16 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   showWaitingForPlayersScreen() {
-    // Check if game already started before showing waiting screen
+    // Check if game already started
     if (this.gameStarted) {
       console.log("Game already started, skipping waiting screen");
       return;
     }
 
-    // Clear current overlay
-    if (this.overlayGroup && this.overlayGroup.children) {
+    // Clear any existing overlay
+    if (this.overlayGroup) {
       this.overlayGroup.clear(true, true);
     }
-    this.overlayGroup = null;
     this.overlayGroup = this.add.group();
 
     // Semi-transparent background
@@ -979,36 +1000,29 @@ export class OnlineGameScene extends Phaser.Scene {
         GAME_CONFIG.CANVAS_WIDTH,
         GAME_CONFIG.CANVAS_HEIGHT,
         0x000000,
-        0.8
+        0.85
       )
       .setDepth(9999);
     this.overlayGroup.add(overlay);
 
-    // Main title
-    const titleText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 - 100,
-        "WAITING FOR PLAYERS",
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "36px",
-          fill: "#fde047",
-          stroke: "#000000",
-          strokeThickness: 4,
-          align: "center",
-        }
-      )
-      .setOrigin(0.5)
-      .setDepth(10000);
-    this.overlayGroup.add(titleText);
+    // Determine status message based on ready states
+    let statusMessage = "Waiting for players...";
+    if (this.isPlayerReady && this.isOpponentReady) {
+      statusMessage = "Both players ready! Starting game...";
+    } else if (this.isPlayerReady && !this.isOpponentReady) {
+      statusMessage = "Waiting for opponent to ready up...";
+    } else if (!this.isPlayerReady && this.isOpponentReady) {
+      statusMessage = "Opponent ready! You need to ready up!";
+    } else {
+      statusMessage = "Waiting for both players to ready up...";
+    }
 
-    // Status text
-    const statusText = this.add
+    // Main status text
+    this.waitingStatusText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 - 40,
-        "You are ready! Waiting for opponent...",
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 50,
+        statusMessage,
         {
           fontFamily: '"Press Start 2P"',
           fontSize: "20px",
@@ -1019,121 +1033,220 @@ export class OnlineGameScene extends Phaser.Scene {
         }
       )
       .setOrigin(0.5)
-      .setDepth(10000);
-    this.overlayGroup.add(statusText);
+      .setDepth(10001);
+    this.overlayGroup.add(this.waitingStatusText);
 
-    // Animated loading indicator
-    const loadingDots = this.add
+    // Ready status display with current states
+    const localPosition = this.playerPosition || "player1";
+    const remotePosition = localPosition === "player1" ? "player2" : "player1";
+    const localStatus = this.isPlayerReady ? "✓" : "⏳";
+    const remoteStatus = this.isOpponentReady ? "✓" : "⏳";
+
+    this.readyStatusText = this.add
       .text(
         GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 20,
-        "●●●",
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 30,
+        `${localStatus} ${localPosition.toUpperCase()} READY\n${remoteStatus} ${remotePosition.toUpperCase()} READY`,
         {
           fontFamily: '"Press Start 2P"',
-          fontSize: "32px",
-          fill: "#22c55e",
-          stroke: "#000000",
-          strokeThickness: 3,
-          align: "center",
-        }
-      )
-      .setOrigin(0.5)
-      .setDepth(10000);
-    this.overlayGroup.add(loadingDots);
-
-    // Animate loading dots
-    this.tweens.add({
-      targets: loadingDots,
-      alpha: 0.3,
-      duration: 800,
-      yoyo: true,
-      repeat: -1,
-      ease: "Power2",
-    });
-
-    // Pulse effect for title
-    this.tweens.add({
-      targets: titleText,
-      scaleX: 1.03,
-      scaleY: 1.03,
-      duration: 1200,
-      yoyo: true,
-      repeat: -1,
-      ease: "Power2",
-    });
-
-    // Ready status indicator
-    const readyStatus = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 + 80,
-        `✓ ${this.playerPosition?.toUpperCase()} READY`,
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "18px",
-          fill: "#22c55e",
+          fontSize: "16px",
+          fill: "#ffff00",
           stroke: "#000000",
           strokeThickness: 2,
           align: "center",
         }
       )
       .setOrigin(0.5)
-      .setDepth(10000);
-    this.overlayGroup.add(readyStatus);
+      .setDepth(10001);
+    this.overlayGroup.add(this.readyStatusText);
 
-    // Store reference for updating
-    this.waitingStatusText = statusText;
-    this.readyStatusText = readyStatus;
+    // Add cancel button if this player hasn't readied yet
+    if (!this.isPlayerReady) {
+      const cancelButton = this.add
+        .text(
+          GAME_CONFIG.CANVAS_WIDTH / 2,
+          GAME_CONFIG.CANVAS_HEIGHT / 2 + 120,
+          "CANCEL",
+          {
+            fontFamily: '"Press Start 2P"',
+            fontSize: "16px",
+            fill: "#ff4444",
+            backgroundColor: "#222222",
+            padding: { x: 20, y: 10 },
+            stroke: "#000000",
+            strokeThickness: 2,
+          }
+        )
+        .setOrigin(0.5)
+        .setDepth(10001)
+        .setInteractive({ useHandCursor: true })
+        .on("pointerdown", () => {
+          this.cancelReady();
+        })
+        .on("pointerover", function () {
+          this.setFill("#ffffff");
+        })
+        .on("pointerout", function () {
+          this.setFill("#ff4444");
+        });
+      this.overlayGroup.add(cancelButton);
+    }
+
+    console.log("Waiting for players screen shown with current ready states:", {
+      localPlayer: this.isPlayerReady,
+      opponent: this.isOpponentReady,
+      statusMessage,
+      localPosition,
+      remotePosition,
+    });
   }
 
   handlePlayerReady(data) {
-    console.log("Player ready event received:", data);
+    console.log("=== PLAYER READY EVENT RECEIVED ===");
+    console.log("Event data:", data);
+    console.log("Local player position:", this.playerPosition);
+    console.log("Event player position:", data.playerPosition);
 
-    // Determine if this is about the opponent
+    // Prevent ready handling if game already started
+    if (this.gameStarted) {
+      console.log("Game already started, ignoring ready event");
+      return;
+    }
+
+    // Validate that we have the necessary data
+    if (!data.playerPosition) {
+      console.warn("Ready event missing playerPosition, cannot process");
+      return;
+    }
+
+    if (!this.playerPosition) {
+      console.warn(
+        "Local playerPosition not set, cannot determine if this is for us or opponent"
+      );
+      return;
+    }
+
+    // Determine if this is about the opponent or self with explicit validation
     const isOpponent = data.playerPosition !== this.playerPosition;
+    const playerName = data.playerPosition;
+
+    console.log("Ready event analysis:", {
+      eventPlayerPosition: data.playerPosition,
+      localPlayerPosition: this.playerPosition,
+      isOpponent: isOpponent,
+      currentLocalReady: this.isPlayerReady,
+      currentOpponentReady: this.isOpponentReady,
+    });
 
     if (isOpponent) {
-      console.log("Opponent is ready!");
+      console.log(`✅ Opponent (${playerName}) is ready!`);
       this.isOpponentReady = true;
-
-      // Update waiting screen if visible
-      if (this.waitingStatusText && this.readyStatusText) {
-        const otherPosition =
-          this.playerPosition === "player1" ? "player2" : "player1";
-
-        this.waitingStatusText.setText("Both players ready! Starting game...");
-        this.readyStatusText.setText(
-          `✓ ${this.playerPosition?.toUpperCase()} READY\n✓ ${otherPosition.toUpperCase()} READY`
-        );
-      }
-
-      // If both players are ready, prepare for game start
-      if (this.isPlayerReady && this.isOpponentReady) {
-        console.log("Both players ready, waiting for game start event...");
-      }
     } else {
-      console.log("Received confirmation that we are ready");
+      console.log(`✅ Received confirmation that we (${playerName}) are ready`);
+      // This should already be true from handleReady(), but make sure
+      this.isPlayerReady = true;
     }
+
+    // Update waiting screen if visible
+    if (this.waitingStatusText && this.readyStatusText) {
+      const localPosition = this.playerPosition || "player1";
+      const remotePosition =
+        localPosition === "player1" ? "player2" : "player1";
+
+      // Update ready status display
+      const localStatus = this.isPlayerReady ? "✓" : "⏳";
+      const remoteStatus = this.isOpponentReady ? "✓" : "⏳";
+
+      this.readyStatusText.setText(
+        `${localStatus} ${localPosition.toUpperCase()} READY\n${remoteStatus} ${remotePosition.toUpperCase()} READY`
+      );
+
+      // Update main status based on ready states
+      if (this.isPlayerReady && this.isOpponentReady) {
+        this.waitingStatusText.setText("Both players ready! Starting game...");
+        console.log("✅ Both players confirmed ready, game should start soon");
+      } else if (this.isPlayerReady && !this.isOpponentReady) {
+        this.waitingStatusText.setText("Waiting for opponent to ready up...");
+      } else if (!this.isPlayerReady && this.isOpponentReady) {
+        this.waitingStatusText.setText("Opponent ready! Click READY to start!");
+      } else {
+        this.waitingStatusText.setText("Waiting for players to ready up...");
+      }
+    }
+
+    // Log final ready state for debugging
+    console.log("Final ready states after event:", {
+      localPlayer: this.isPlayerReady,
+      opponent: this.isOpponentReady,
+      bothReady: this.isPlayerReady && this.isOpponentReady,
+      gameStarted: this.gameStarted,
+    });
+    console.log("=== END PLAYER READY EVENT ===");
+
+    // IMPORTANT: Don't auto-start the game here
+    // Wait for explicit all-players-ready or game-started events from backend
+    // This prevents premature game starts
   }
 
   handleAllPlayersReady(data) {
-    console.log("All players ready, game will start soon:", data);
+    console.log("All players ready event received:", data);
+
+    // Double-check that both players are actually marked as ready
+    if (!this.isPlayerReady || !this.isOpponentReady) {
+      console.warn(
+        "All-players-ready received but local state shows not all ready:",
+        {
+          localPlayer: this.isPlayerReady,
+          opponent: this.isOpponentReady,
+        }
+      );
+
+      // Force update ready states based on the event data
+      if (data.readyPlayers && Array.isArray(data.readyPlayers)) {
+        data.readyPlayers.forEach((playerPos) => {
+          if (playerPos === this.playerPosition) {
+            this.isPlayerReady = true;
+          } else {
+            this.isOpponentReady = true;
+          }
+        });
+      }
+    }
+
+    // Prevent countdown if game already started
+    if (this.gameStarted) {
+      console.log("Game already started, ignoring all-players-ready");
+      return;
+    }
 
     // Update status text
     if (this.waitingStatusText) {
       this.waitingStatusText.setText("All players ready! Starting in 3...");
+
+      // Update ready status display to show both players ready
+      if (this.readyStatusText) {
+        const localPosition = this.playerPosition || "player1";
+        const remotePosition =
+          localPosition === "player1" ? "player2" : "player1";
+        this.readyStatusText.setText(
+          `✓ ${localPosition.toUpperCase()} READY\n✓ ${remotePosition.toUpperCase()} READY`
+        );
+      }
 
       // Countdown before starting - this countdown is just for UI feedback
       // The actual game start is handled by the backend sending game-started event
       let countdown = 3;
       const countdownInterval = setInterval(() => {
         countdown--;
-        if (countdown > 0 && this.waitingStatusText) {
+        if (countdown > 0 && this.waitingStatusText && !this.gameStarted) {
           this.waitingStatusText.setText(
             `All players ready! Starting in ${countdown}...`
           );
-        } else if (this.waitingStatusText) {
+        } else if (this.waitingStatusText && !this.gameStarted) {
           this.waitingStatusText.setText("Waiting for server to start game...");
+          clearInterval(countdownInterval);
+        } else {
+          // Game started during countdown, clear interval
           clearInterval(countdownInterval);
         }
       }, 1000);
@@ -1145,11 +1258,39 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   cancelReady() {
+    if (this.gameStarted) {
+      console.log("Game already started, cannot cancel ready");
+      return;
+    }
+
     console.log("Player cancelled ready up");
 
     // Reset ready states
     this.isPlayerReady = false;
-    this.isOpponentReady = false;
+    // Note: Keep opponent ready state as-is since they might still be ready
+
+    // If we have socket service, emit cancel ready event
+    // (This depends on backend implementation - may not be needed)
+    if (
+      this.socketService &&
+      this.socketService.isSocketConnected() &&
+      this.socketService.isRoomJoined()
+    ) {
+      try {
+        // Check if backend supports cancel-ready event
+        console.log("Emitting cancel-ready event to server");
+        if (this.socketService.getSocket()) {
+          this.socketService.getSocket().emit("cancel-ready", {
+            roomId: this.socketService.getCurrentRoomId(),
+          });
+        }
+      } catch (error) {
+        console.warn(
+          "Failed to emit cancel-ready event (backend may not support it):",
+          error
+        );
+      }
+    }
 
     // Clear the overlay and show ready button again
     if (this.overlayGroup) {
@@ -1161,8 +1302,21 @@ export class OnlineGameScene extends Phaser.Scene {
     this.waitingStatusText = null;
     this.readyStatusText = null;
 
+    console.log("Ready state reset, showing ready button again");
+    console.log("Current ready states after cancel:", {
+      localPlayer: this.isPlayerReady,
+      opponent: this.isOpponentReady,
+    });
+
     // Show ready button again after a short delay
     this.time.delayedCall(500, () => {
+      // Double check game hasn't started while we were in delay
+      if (this.gameStarted) {
+        console.log(
+          "Game started during cancel delay, not showing ready button"
+        );
+        return;
+      }
       this.showReadyButton();
     });
   }
@@ -2001,39 +2155,174 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   debugReadySystem() {
-    const status = this.getReadyStatus();
-    console.log("=== READY SYSTEM DEBUG ===");
-    console.log("Player Ready:", status.isPlayerReady);
-    console.log("Opponent Ready:", status.isOpponentReady);
-    console.log("Game Started:", status.gameStarted);
-    console.log("Has Overlay:", status.hasOverlay);
-    console.log("Overlay Children:", status.overlayChildCount);
-    console.log("Socket Connected:", status.socketConnected);
-    console.log("Room Joined:", status.roomJoined);
-    console.log("Player Position:", status.playerPosition);
-    console.log("Room State:", status.roomState);
-    console.log("========================");
+    const readyStates = {
+      // Local game state
+      gameStarted: this.gameStarted,
+      gameOver: this.gameOver,
+      isPaused: this.isPaused,
+      pausedForGoal: this.pausedForGoal,
 
-    // Expose this to global scope for easy debugging
-    if (typeof window !== "undefined") {
-      window.__HEADBALL_READY_STATUS = status;
+      // Ready states
+      isPlayerReady: this.isPlayerReady,
+      isOpponentReady: this.isOpponentReady,
+      bothPlayersReady: this.isPlayerReady && this.isOpponentReady,
+
+      // Player position
+      playerPosition: this.playerPosition,
+
+      // UI state
+      hasOverlay: !!this.overlayGroup,
+      overlayChildrenCount: this.overlayGroup
+        ? this.overlayGroup.children.length
+        : 0,
+      hasWaitingText: !!this.waitingStatusText,
+      hasReadyStatusText: !!this.readyStatusText,
+
+      // Socket state
+      socketConnected: this.socketService
+        ? this.socketService.isSocketConnected()
+        : false,
+      roomJoined: this.socketService
+        ? this.socketService.isRoomJoined()
+        : false,
+      playersInRoom: this.socketService
+        ? this.socketService.getPlayersInRoom()
+        : 0,
+      currentRoomId: this.socketService
+        ? this.socketService.getCurrentRoomId()
+        : null,
+
+      // Timing information
+      timestamp: new Date().toISOString(),
+
+      // Current UI text content
+      waitingTextContent: this.waitingStatusText
+        ? this.waitingStatusText.text
+        : null,
+      readyStatusTextContent: this.readyStatusText
+        ? this.readyStatusText.text
+        : null,
+    };
+
+    console.log("=== READY SYSTEM DEBUG INFO ===");
+    console.table(readyStates);
+    console.log(
+      "Room state:",
+      this.socketService
+        ? this.socketService.getCurrentRoomState()
+        : "No socket service"
+    );
+    console.log("================================");
+
+    return readyStates;
+  }
+
+  // Enhanced method to force clear ready system (for debugging)
+  forceResetReadySystem() {
+    console.log("=== FORCE RESETTING READY SYSTEM ===");
+
+    // Reset all ready states
+    this.isPlayerReady = false;
+    this.isOpponentReady = false;
+
+    // Clear all UI
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
+
+    this.waitingStatusText = null;
+    this.readyStatusText = null;
+
+    // Reset game state flags
+    this.gameStarted = false;
+    this.gameOver = false;
+    this.pausedForGoal = false;
+
+    console.log("Ready system reset complete");
+    console.log("New state:", this.debugReadySystem());
+
+    // Show ready button if appropriate
+    if (!this.gameStarted) {
+      this.time.delayedCall(1000, () => {
+        this.showReadyButton();
+      });
     }
   }
 
   // Expose debug method globally
   exposeDebugMethods() {
     if (typeof window !== "undefined") {
+      // Enhanced debug methods for troubleshooting
       window.__HEADBALL_DEBUG_READY = () => this.debugReadySystem();
+      window.__HEADBALL_FORCE_RESET_READY = () => this.forceResetReadySystem();
+      window.__HEADBALL_FORCE_GAME_START = () => {
+        console.log("Force starting game...");
+        this.handleGameStarted({
+          forcedStart: true,
+          timestamp: Date.now(),
+        });
+      };
+      window.__HEADBALL_GET_GAME_STATE = () => ({
+        gameStarted: this.gameStarted,
+        isPlayerReady: this.isPlayerReady,
+        isOpponentReady: this.isOpponentReady,
+        playerPosition: this.playerPosition,
+        hasOverlay: !!this.overlayGroup,
+        socketConnected: this.socketService?.isSocketConnected(),
+        roomJoined: this.socketService?.isRoomJoined(),
+        playersInRoom: this.socketService?.getPlayersInRoom(),
+      });
       window.__HEADBALL_FORCE_READY = () => {
-        console.log("Force triggering ready for debugging");
+        console.log("Force ready up...");
         this.handleReady();
       };
-      window.__HEADBALL_RESET_READY = () => {
-        console.log("Force resetting ready state for debugging");
-        this.isPlayerReady = false;
-        this.isOpponentReady = false;
+      window.__HEADBALL_FORCE_CANCEL_READY = () => {
+        console.log("Force cancel ready...");
         this.cancelReady();
       };
+
+      // NEW: Monitor ready events to detect the bug
+      window.__HEADBALL_MONITOR_READY_EVENTS = () => {
+        console.log("🔍 Setting up ready event monitoring...");
+        const originalHandlePlayerReady = this.handlePlayerReady.bind(this);
+        this.handlePlayerReady = (data) => {
+          console.log("🔔 READY EVENT INTERCEPTED:", {
+            eventData: data,
+            currentLocalPosition: this.playerPosition,
+            currentLocalReady: this.isPlayerReady,
+            currentOpponentReady: this.isOpponentReady,
+            timestamp: new Date().toISOString(),
+          });
+
+          // Call original method
+          const result = originalHandlePlayerReady(data);
+
+          console.log("🔔 AFTER PROCESSING READY EVENT:", {
+            newLocalReady: this.isPlayerReady,
+            newOpponentReady: this.isOpponentReady,
+            bothReady: this.isPlayerReady && this.isOpponentReady,
+          });
+
+          return result;
+        };
+        console.log("✅ Ready event monitoring enabled");
+      };
+
+      console.log("🎮 Debug methods exposed to window:");
+      console.log(
+        "  __HEADBALL_DEBUG_READY() - Show detailed ready system state"
+      );
+      console.log(
+        "  __HEADBALL_FORCE_RESET_READY() - Reset ready system completely"
+      );
+      console.log("  __HEADBALL_FORCE_GAME_START() - Force start the game");
+      console.log("  __HEADBALL_GET_GAME_STATE() - Get current game state");
+      console.log("  __HEADBALL_FORCE_READY() - Force ready up");
+      console.log("  __HEADBALL_FORCE_CANCEL_READY() - Force cancel ready");
+      console.log(
+        "  __HEADBALL_MONITOR_READY_EVENTS() - Monitor ready events for debugging"
+      );
     }
   }
 

@@ -191,34 +191,23 @@ export default function GameView() {
           window.__HEADBALL_GAME = game;
           // Store the callback function directly to avoid dependency issues
           window.__HEADBALL_GAME_LOADED = () => {
-            console.log(
-              "Game engine loaded, checking if ready to emit player-ready"
-            );
+            console.log("Game engine loaded and ready for player interaction");
             setGameLoading(false);
 
-            // Emit player-ready only for online games with proper checks
+            // NOTE: We do NOT emit player-ready automatically here anymore!
+            // The player-ready event should only be emitted when the user manually
+            // clicks the ready button in the game UI (OnlineGameScene.handleReady())
+            // This prevents premature game starts and ensures proper ready coordination
+
             if (gameMode === "online") {
-              // Add a small delay to ensure everything is properly initialized
-              setTimeout(() => {
-                if (
-                  socketService.isSocketConnected() &&
-                  socketService.isRoomJoined()
-                ) {
-                  console.log(
-                    "Socket connected and room joined, emitting player-ready"
-                  );
-                  socketService.emitPlayerReady();
-                } else {
-                  console.warn(
-                    "Cannot emit player-ready: socket not connected or room not joined"
-                  );
-                  console.log(
-                    "Socket connected:",
-                    socketService.isSocketConnected()
-                  );
-                  console.log("Room joined:", socketService.isRoomJoined());
-                }
-              }, 500);
+              console.log(
+                "Online game loaded - waiting for player to manually ready up"
+              );
+              console.log("Socket status:", {
+                connected: socketService.isSocketConnected(),
+                roomJoined: socketService.isRoomJoined(),
+                playersInRoom: socketService.getPlayersInRoom(),
+              });
             }
           };
         }

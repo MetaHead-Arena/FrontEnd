@@ -500,8 +500,24 @@ class SocketService {
 
   emitPlayerReady(): void {
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting player-ready");
-      this.socket.emit("player-ready", { roomId: this.currentRoomId });
+      // Get player position from global state if available
+      let playerPosition = null;
+      if (
+        typeof window !== "undefined" &&
+        (window as any).__HEADBALL_PLAYER_POSITION
+      ) {
+        playerPosition = (window as any).__HEADBALL_PLAYER_POSITION;
+      }
+
+      const readyData = {
+        roomId: this.currentRoomId,
+        playerPosition: playerPosition,
+        socketId: this.socket.id,
+        timestamp: Date.now(),
+      };
+
+      console.log("Emitting player-ready with data:", readyData);
+      this.socket.emit("player-ready", readyData);
     } else {
       console.error(
         "Socket not connected or not in room, cannot emit player-ready"
