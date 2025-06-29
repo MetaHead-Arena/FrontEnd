@@ -51,6 +51,8 @@ export class GameScene extends Phaser.Scene {
     this.load.image("ball", "/ball.png");
     this.load.image("left-net", "/left-net.png");
     this.load.image("right-net", "/right-net.png");
+    this.load.audio("goal", "/goal.wav");
+    this.load.audio("crowd", "/crowd.mp3");
   }
 
   resetGameState() {
@@ -105,6 +107,8 @@ export class GameScene extends Phaser.Scene {
     this.startGameTimer();
     this.startPowerupSystem();
     this.physics.add.collider(this.player1.sprite, this.player2.sprite);
+    this.crowdSound = this.sound.add("crowd", { loop: true, volume: 0.3 });
+    this.crowdSound.play();
 
     // Notify that game engine has finished loading
     this.notifyGameLoaded();
@@ -191,7 +195,7 @@ export class GameScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setDepth(10002);
       this.overlayGroup.add(btnText);
-
+      if (this.crowdSound) this.crowdSound.stop();
       btnRect.on("pointerdown", btn.onClick);
       btnText
         .setInteractive({ useHandCursor: true })
@@ -280,6 +284,14 @@ export class GameScene extends Phaser.Scene {
             this.isPaused = false;
             this.physics.world.resume();
             if (this.timerEvent) this.timerEvent.paused = false;
+            // Resume or replay crowd sound
+            if (this.crowdSound) {
+              if (this.crowdSound.isPlaying) {
+                this.crowdSound.resume();
+              } else {
+                this.crowdSound.play();
+              }
+            }
           },
         },
         {
@@ -460,6 +472,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   setupPlayerBallInteractions() {
+    this.physics.add.overlap(this.player1.sprite, this.ball, (player, ball) => {
+      if (this.input.keyboard.checkDown(this.space, 0)) {
+        this.kickBall(this.player1, ball);
+      }
+    });
     // Player-ball collisions for kicking
     this.physics.add.collider(
       this.player1.sprite,
@@ -481,6 +498,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   kickBall(player, ball) {
+    const now = this.time.now;
+    if (now - player.lastKickTime < player.kickCooldown) return;
+    player.lastKickTime = now;
     // Determine if the player is shooting
     const isShooting = player.isCurrentlyShooting();
 
@@ -538,7 +558,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.player2Score++;
     }
-
+    this.sound.play("goal", { volume: 0.7 });
     // Enhanced goal effects
     this.updateScoreDisplay();
     this.showEnhancedGoalEffect();
@@ -781,6 +801,44 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5, 0.5)
       .setDepth(4000)
       .setVisible(false);
+
+    // Instructions bar (bottom center)
+    this.instructionsBar = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        900,
+        "Player 1 WASD to move | Player 2 Arrows to move, ESC to pause",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "16px",
+          fill: "#fff",
+          backgroundColor: "#000",
+          padding: { x: 16, y: 8 },
+          align: "center",
+          borderRadius: 12,
+        }
+      )
+      .setOrigin(0.5, 0.5)
+      .setDepth(3000);
+
+    // Instructions bar (bottom center)
+    this.instructionsBar = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        935,
+        "Power ups will show randomly on the sky, catch them with the ball! 🌟",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "12px",
+          fill: "#fde047",
+          backgroundColor: "#222",
+          padding: { x: 16, y: 8 },
+          align: "center",
+          borderRadius: 12,
+        }
+      )
+      .setOrigin(0.5, 0.5)
+      .setDepth(3000);
     // Restart key
     // this.restartKey = this.input.keyboard.addKey(
     //   Phaser.Input.Keyboard.KeyCodes.R
@@ -1345,7 +1403,8 @@ export class GameScene extends Phaser.Scene {
         "left-net"
       )
       .setOrigin(0.5, 1) // adjust as needed for your image
-      .setScale(0.91, 0.91) // adjust scale as needed
+      .setScale(0.9, 0.9) // adjust scale as needed
+      .setAlpha(0.85)
       .setDepth(5); // higher than players/ball
 
     // Right net
@@ -1356,7 +1415,8 @@ export class GameScene extends Phaser.Scene {
         "right-net"
       )
       .setOrigin(0.5, 1)
-      .setScale(0.91, 0.91) // adjust scale as needed
+      .setScale(0.9, 0.9) // adjust scale as needed
+      .setAlpha(0.85)
       .setDepth(5); // higher than players/ball
 
     this.rightGoalZone = this.physics.add.staticGroup();

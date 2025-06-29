@@ -5,6 +5,8 @@ export class Player {
     this.scene = scene;
     this.controls = controls;
     this.playerKey = playerKey;
+    this.lastKickTime = 0;
+    this.kickCooldown = 200;
     // this.sprite = scene.physics.add.sprite(x, y, spriteKey);
     // Get attributes from config (with fallback to defaults)
     this.attributes = GAME_CONFIG.PLAYER.ATTRIBUTES[playerKey] || {
