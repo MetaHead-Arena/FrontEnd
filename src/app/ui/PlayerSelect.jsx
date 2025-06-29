@@ -1,4 +1,4 @@
-import { useAccount, useReadContract } from "wagmi";
+import { useAccount, useReadContract, useChainId } from "wagmi";
 import { useEffect, useState } from "react";
 import { PLAYER_NFT_ADDRESS, PLAYER_NFT_ABI } from "../lib/contracts/playerNFT";
 import { fetchMetadataFromURI } from "../lib/fetchNFTMetadata";
@@ -7,10 +7,11 @@ import "./PixelUI.css";
 
 const PlayerSelect = ({ ownedImages, selectedIdx, onPlayerChange }) => {
   const { address } = useAccount();
+  const chainId = useChainId();
   const [metadata, setMetadata] = useState(null);
 
   const { data, refetch } = useReadContract({
-    address: PLAYER_NFT_ADDRESS,
+    address: PLAYER_NFT_ADDRESS[chainId],
     abi: PLAYER_NFT_ABI,
     functionName: "getTokenCount",
     args: [address],

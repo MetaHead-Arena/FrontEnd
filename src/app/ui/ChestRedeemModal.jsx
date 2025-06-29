@@ -7,7 +7,7 @@ import {
   GAME_TOKEN_ADDRESS,
   GAME_TOKEN_ABI,
 } from "../lib/contracts/gameToken";
-import { useAccount, useReadContract, useWaitForTransactionReceipt, useConfig } from "wagmi";
+import { useAccount, useReadContract, useWaitForTransactionReceipt, useConfig, useChainId } from "wagmi";
 import { writeContract, waitForTransactionReceipt } from "wagmi/actions";
 
 const commonChestImg = "/common-chest.png";
@@ -22,6 +22,7 @@ const chestTypes = [
 
 const ChestRedeemModal = ({ onClose }) => {
   const { address } = useAccount();
+  const chainId = useChainId();
   const config = useConfig();
   const [buyingBoxType, setBuyingBoxType] = useState(null); // Track which box is being bought
   const [openingBoxType, setOpeningBoxType] = useState(null); // Track which box is being opened
@@ -30,7 +31,7 @@ const ChestRedeemModal = ({ onClose }) => {
   const [currentStep, setCurrentStep] = useState(''); // Track current step
 
   const { data, refetch } = useReadContract({
-    address: MYSTERY_BOX_ADDRESS,
+    address: MYSTERY_BOX_ADDRESS[chainId],
     abi: MYSTERY_BOX_ABI,
     functionName: "getNumOfBox",
     args: [address],
@@ -99,7 +100,7 @@ const ChestRedeemModal = ({ onClose }) => {
       setOpeningBoxType(boxType);
       
       const openResult = await writeContract(config, {
-        address: MYSTERY_BOX_ADDRESS,
+        address: MYSTERY_BOX_ADDRESS[chainId],
         abi: MYSTERY_BOX_ABI,
         functionName: "openBox",
         args: [boxType],
@@ -136,10 +137,10 @@ const ChestRedeemModal = ({ onClose }) => {
       setCurrentStep('Approving tokens...');
       
       const approveHash = await writeContract(config, {
-        address: GAME_TOKEN_ADDRESS,
+        address: GAME_TOKEN_ADDRESS[chainId],
         abi: GAME_TOKEN_ABI,
         functionName: "approve",
-        args: [MYSTERY_BOX_ADDRESS, boxPrice],
+        args: [MYSTERY_BOX_ADDRESS[chainId], boxPrice],
       });
 
       setCurrentStep('Waiting for approval confirmation...');
@@ -154,7 +155,7 @@ const ChestRedeemModal = ({ onClose }) => {
       
       // Step 2: Buy the box (after approval is confirmed)
       const buyResult = await writeContract(config, {
-        address: MYSTERY_BOX_ADDRESS,
+        address: MYSTERY_BOX_ADDRESS[chainId],
         abi: MYSTERY_BOX_ABI,
         functionName: "buyBox",
         args: [boxType],

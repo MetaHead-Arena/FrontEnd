@@ -13,13 +13,13 @@ const BAR_WIDTH = 200;
 // Level and XP utility functions
 function getXPForLevel(level) {
   if (level < 1) return 0;
-  if (level == 1) return 100;
+  if (level === 1) return 100;
   return Math.floor((100 * level * (100 + level)) / 100);
 }
 
 function getLevelFromXP(totalXP) {
   if (totalXP < 100) return 0;
-  if (totalXP == 100) return 1;
+  if (totalXP === 100) return 1;
 
   let left = 1;
   let right = 255;
@@ -42,14 +42,22 @@ const LevelProgressBar = () => {
   const [XPData, setXPData] = React.useState(null);
   const { address } = useAccount();
 
-  const { data: xp } = useReadContract({
-    address: GAME_ENGINE_ADDRESS,
+  const { data: xp1 } = useReadContract({
+    address: GAME_ENGINE_ADDRESS[43113],//avalanche
     abi: GAME_ENGINE_ABI,
     functionName: "getPlayerXP",
     args: [address],
     watch: false,
   });
-
+  const { data: xp2 } = useReadContract({
+    address: GAME_ENGINE_ADDRESS[11155111],//sepolia
+    abi: GAME_ENGINE_ABI,
+    functionName: "getPlayerXP",
+    args: [address],
+    watch: false,
+  });
+  
+  let xp = (xp1 || 0) + (xp2 || 0);
   useEffect(() => {
     if (xp !== undefined) {
       // console.log("XP data received:", xp);
