@@ -113,7 +113,25 @@ export class GameScene extends Phaser.Scene {
     this.space = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.SPACE
     );
-    this.input.keyboard.on("keydown-ESC", this.handlePause, this);
+    this.input.keyboard.on("keydown-R", this.handleReady, this);
+    this.input.keyboard.on("keydown-ENTER", this.handleReady, this);
+
+    // ESC key handler - handles both pause and cancel ready based on context
+    this.input.keyboard.on(
+      "keydown-ESC",
+      () => {
+        if (
+          this.gameMode === "online" &&
+          !this.gameStarted &&
+          this.overlayGroup
+        ) {
+          this.cancelReady();
+        } else {
+          this.handlePause();
+        }
+      },
+      this
+    );
 
     this.createPlayers();
     this.createBall();
@@ -157,6 +175,20 @@ export class GameScene extends Phaser.Scene {
     // Listen for game state updates
     this.socketService.on("game-started", (data) => {
       console.log("Game started via socket:", data);
+      console.log("Current game state:", {
+        gameMode: this.gameMode,
+        playerPosition: this.playerPosition,
+        gameStarted: this.gameStarted,
+        gameOver: this.gameOver,
+        socketId: this.socketService?.getSocket()?.id,
+      });
+
+      // Clear any overlay (like ready overlay)
+      if (this.overlayGroup) {
+        this.overlayGroup.clear(true, true);
+        this.overlayGroup = null;
+      }
+
       this.handleGameStarted(data);
     });
 
@@ -221,6 +253,12 @@ export class GameScene extends Phaser.Scene {
       gameOver: this.gameOver,
       socketId: this.socketService?.getSocket()?.id,
     });
+
+    // Clear any overlay (like ready overlay)
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
 
     // Reset only necessary game state (don't call resetGameState as it sets gameStarted = false)
     this.player1Score = 0;
@@ -386,6 +424,16 @@ export class GameScene extends Phaser.Scene {
       // Call the global callback if available (for online games)
       if (typeof window !== "undefined" && window.__HEADBALL_GAME_LOADED) {
         window.__HEADBALL_GAME_LOADED();
+      }
+
+      // Expose handleReady function globally for React UI
+      if (typeof window !== "undefined") {
+        window.__HEADBALL_HANDLE_READY = () => {
+          this.handleReady();
+        };
+        window.__HEADBALL_CANCEL_READY = () => {
+          this.cancelReady();
+        };
       }
     });
   }
@@ -570,6 +618,302 @@ export class GameScene extends Phaser.Scene {
         },
       ],
     });
+  }
+
+  /**
+   * Handle player ready up functionality for online multiplayer
+   *
+   * This function:
+   * - Only works in online mode
+   * - Checks if game hasn't started yet
+   * - Emits ready event to server via socket service
+   * - Shows a comprehensive ready up overlay with proper UI
+   * - Can be triggered by:
+   *   - Pressing 'R' key
+   *   - Pressing 'Enter' key
+   *   - Calling from React UI via window.__HEADBALL_HANDLE_READY()
+   *
+   * The overlay is automatically cleared when the game starts
+   * via the handleGameStarted function.
+   */
+  handleReady() {
+    // Only allow ready in online mode and when not already in a game
+    if (this.gameMode !== "online") {
+      console.log("Ready function only available in online mode");
+      return;
+    }
+
+    if (this.gameStarted) {
+      console.log("Game already started, cannot ready up");
+      return;
+    }
+
+    if (!this.socketService) {
+      console.log("Socket service not available");
+      return;
+    }
+
+    console.log("Player clicked ready from Phaser");
+
+    // Emit ready event to server
+    this.socketService.emitPlayerReady();
+
+    // Show comprehensive ready up overlay
+    this.showReadyUpOverlay();
+  }
+
+  /**
+   * Show a dedicated ready up overlay with proper UI design
+   */
+  showReadyUpOverlay() {
+    if (this.overlayGroup && this.overlayGroup.children) {
+      this.overlayGroup.clear(true, true);
+    }
+    this.overlayGroup = null;
+    this.overlayGroup = this.add.group();
+
+    // Semi-transparent background
+    const overlay = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH,
+        GAME_CONFIG.CANVAS_HEIGHT,
+        0x000000,
+        0.7
+      )
+      .setDepth(9999);
+    this.overlayGroup.add(overlay);
+
+    // Main title
+    const titleText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 120,
+        "READY UP!",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "48px",
+          fill: "#fde047",
+          stroke: "#000000",
+          strokeThickness: 6,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(titleText);
+
+    // Status message
+    const statusText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 40,
+        "Waiting for opponent...",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(statusText);
+
+    // Animated dots
+    const dots = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 10,
+        "...",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "32px",
+          fill: "#fde047",
+          stroke: "#000000",
+          strokeThickness: 4,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(dots);
+
+    // Animate the dots
+    this.tweens.add({
+      targets: dots,
+      alpha: 0.3,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: "Power2",
+    });
+
+    // Player info box
+    const playerInfoBox = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 80,
+        400,
+        120,
+        0x22223a,
+        0.9
+      )
+      .setStrokeStyle(4, 0xfacc15)
+      .setDepth(10001);
+    this.overlayGroup.add(playerInfoBox);
+
+    // Player position info
+    const playerPositionText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 60,
+        `You are: ${this.playerPosition?.toUpperCase() || "UNKNOWN"}`,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "16px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 2,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(playerPositionText);
+
+    // Controls info
+    const controls = this.playerPosition === "player1" ? "Arrow Keys" : "WASD";
+    const controlsText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 85,
+        `Controls: ${controls}`,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "14px",
+          fill: "#fde047",
+          stroke: "#000000",
+          strokeThickness: 2,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(controlsText);
+
+    // Side indicator
+    const side = this.playerPosition === "player1" ? "Right Side" : "Left Side";
+    const sideText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 105,
+        `Position: ${side}`,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "14px",
+          fill: "#fde047",
+          stroke: "#000000",
+          strokeThickness: 2,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(sideText);
+
+    // Cancel button
+    const cancelButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 180,
+        200,
+        50,
+        0xdc2626,
+        1
+      )
+      .setStrokeStyle(3, 0xb91c1c)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(cancelButton);
+
+    const cancelText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 180,
+        "CANCEL READY",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "16px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 2,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(cancelText);
+
+    // Button hover effects
+    cancelButton.on("pointerover", () => {
+      cancelButton.setFillStyle(0xef4444);
+    });
+
+    cancelButton.on("pointerout", () => {
+      cancelButton.setFillStyle(0xdc2626);
+    });
+
+    // Cancel ready functionality
+    cancelButton.on("pointerdown", () => {
+      this.cancelReady();
+    });
+
+    cancelText.setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+      this.cancelReady();
+    });
+
+    // Add some visual effects
+    this.tweens.add({
+      targets: titleText,
+      scaleX: 1.05,
+      scaleY: 1.05,
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: "Power2",
+    });
+
+    // Pulse effect for the player info box
+    this.tweens.add({
+      targets: playerInfoBox,
+      scaleX: 1.02,
+      scaleY: 1.02,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: "Power2",
+    });
+  }
+
+  /**
+   * Cancel ready up and return to normal state
+   */
+  cancelReady() {
+    console.log("Player cancelled ready up");
+
+    // Clear the overlay
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
+
+    // Note: In a real implementation, you might want to emit a "cancel-ready" event
+    // to the server, but for now we just clear the UI
+    // this.socketService.emitCancelReady();
   }
 
   createFieldBoundaries() {

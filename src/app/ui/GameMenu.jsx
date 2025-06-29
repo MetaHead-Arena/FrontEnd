@@ -29,8 +29,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const [playersInRoom, setPlayersInRoom] = useState(0);
   const [waitingForPlayers, setWaitingForPlayers] = useState(false);
   const [bothPlayersReady, setBothPlayersReady] = useState(false);
-  const [localPlayerReady, setLocalPlayerReady] = useState(false);
-  const [remotePlayerReady, setRemotePlayerReady] = useState(false);
   const [showCoinTransferModal, setShowCoinTransferModal] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [connectionHealth, setConnectionHealth] = useState(null);
@@ -139,12 +137,10 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
 
       if (playerId === socketId) {
         // Local player is ready
-        setLocalPlayerReady(true);
         readyPlayersRef.current.add(playerId);
         console.log("Local player marked as ready");
       } else {
         // Remote player is ready
-        setRemotePlayerReady(true);
         readyPlayersRef.current.add(playerId);
         console.log("Remote player marked as ready");
       }
@@ -188,8 +184,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       setPlayersInRoom(0);
       setWaitingForPlayers(false);
       setBothPlayersReady(false);
-      setLocalPlayerReady(false);
-      setRemotePlayerReady(false);
       readyPlayersRef.current.clear();
     }
   }, [isAuthenticated]);
@@ -216,8 +210,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       setGameLoading(false); // Hide the loading overlay
       // Reset ready state when joining a new room
       setBothPlayersReady(false);
-      setLocalPlayerReady(false);
-      setRemotePlayerReady(false);
       readyPlayersRef.current.clear();
     }
     socketService.on("room-joined", onRoomJoined);
@@ -228,8 +220,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
     function onLeftRoom(data) {
       // Reset ready state when leaving room
       setBothPlayersReady(false);
-      setLocalPlayerReady(false);
-      setRemotePlayerReady(false);
       readyPlayersRef.current.clear();
     }
     socketService.on("left-room", onLeftRoom);
@@ -253,8 +243,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
 
     // Reset ready state for new match
     setBothPlayersReady(false);
-    setLocalPlayerReady(false);
-    setRemotePlayerReady(false);
     readyPlayersRef.current.clear();
 
     if (socketService.isSocketConnected() && playerCreated) {
@@ -278,8 +266,13 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
 
   const handleReadyClick = () => {
     console.log("Player clicked ready");
-    setLocalPlayerReady(true);
-    socketService.emitPlayerReady();
+
+    // Use Phaser's handleReady function
+    if (typeof window !== "undefined" && window.__HEADBALL_HANDLE_READY) {
+      window.__HEADBALL_HANDLE_READY();
+    } else {
+      console.warn("Phaser handleReady function not available");
+    }
   };
 
   const handleResetConnection = async () => {
@@ -647,13 +640,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
                       >
                         Both players joined! Click READY to start.
                       </div>
-                      <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-                        You: {localPlayerReady ? "✅ Ready" : "❌ Not Ready"}
-                      </div>
-                      <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-                        Opponent:{" "}
-                        {remotePlayerReady ? "✅ Ready" : "⏳ Waiting..."}
-                      </div>
                     </>
                   )}
                   {bothPlayersReady && (
@@ -690,8 +676,7 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
             {/* Ready button - show when both players are in room but not ready */}
             {roomJoined &&
               playersInRoom >= 2 &&
-              !bothPlayersReady &&
-              !localPlayerReady && (
+              !bothPlayersReady && (
                 <PixelButton
                   variant="menu"
                   size="large"
