@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 // import GameBackGround from "../assets/GameBackGround.png"; // Not needed in Next.js
 import PixelButton from "./PixelButton";
 import PlayerSelect from "./PlayerSelect";
@@ -8,8 +8,9 @@ import LevelProgressBar from "./LevelProgressBar";
 import CoinDisplay from "./CoinDisplay";
 import CoinModal from "./CoinModal";
 import NetworkSwitcher from "./NetworkSwitcher";
-import { useReadContract } from "wagmi";
-
+import { useReadContract, useChainId } from "wagmi";
+import { PLAYER_NFT_ADDRESS, PLAYER_NFT_ABI } from "../lib/contracts/playerNFT";
+import { playerUrls } from "../lib/playerUrls";
 import { useAccount } from "wagmi";
 import CustomConnectButton from "./CustomConnectButton";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,7 +21,8 @@ const GameBackGround = "/GameBackGround.png";
 const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const { address, isConnected } = useAccount();
   const { isAuthenticated } = useAuth();
-  const [selectedPlayer, setSelectedPlayer] = useState(1);
+  const chainId = useChainId();
+  const [selectedPlayer, setSelectedPlayer] = useState(0);
   const [showChestModal, setShowChestModal] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
   const [playerCreated, setPlayerCreated] = useState(false);
@@ -38,6 +40,69 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   // Store onSelectMode in a ref to avoid dependency issues
   const onSelectModeRef = useRef(onSelectMode);
   onSelectModeRef.current = onSelectMode;
+  const [resolvedImages, setResolvedImages] = useState([]);
+  // const [selectedPlayer, setSelectedPlayer] = useState(0);
+
+  const { data: tokenCount } = useReadContract({
+    address: PLAYER_NFT_ADDRESS[chainId],
+    abi: PLAYER_NFT_ABI,
+    functionName: "getTokenCount",
+    args: [address],
+    enabled: !!address,
+  });
+  console.log("GameMenu tokenCount:", tokenCount);
+
+  const ownedImages = useMemo(() => {
+    if (!tokenCount) return [];
+    const ans = [];
+
+    // tokenCount is uint256[][] - a 2D array
+    for (let i = 0; i < tokenCount.length; i++) {
+      const playerTokens = tokenCount[i]; // Array for player type i
+      if (Array.isArray(playerTokens)) {
+        for (let j = 0; j < playerTokens.length; j++) {
+          const tokenAmount = Number(playerTokens[j]); // Convert BigInt to Number
+          if (tokenAmount > 0) {
+            ans.push({
+              url:
+                playerUrls[i] && playerUrls[i][j]
+                  ? playerUrls[i][j]
+                  : playerUrls[i][0],
+              type: i,
+              idx: j,
+              amount: tokenAmount.toString(),
+            });
+          }
+        }
+      }
+    }
+    return ans;
+  }, [tokenCount]);
+  useEffect(() => {
+    const fetchImages = async () => {
+      if (!ownedImages.length) {
+        setResolvedImages([]);
+        return;
+      }
+      const results = await Promise.all(
+        ownedImages.map(async (item) => {
+          try {
+            const res = await fetch(item.url);
+            const data = await res.json();
+            return {
+              ...item,
+              resolvedUrl: data.image || item.url, // Use the image field from metadata
+            };
+          } catch (e) {
+            return { ...item, resolvedUrl: item.url };
+          }
+        })
+      );
+      setResolvedImages(results);
+    };
+    fetchImages();
+  }, [ownedImages]);
+  console.log(ownedImages);
 
   // Listen for player-created event and check initial state
   useEffect(() => {
@@ -310,12 +375,20 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   }, []);
 
   const handlePlayerChange = (direction) => {
-    if (direction === "next") {
-      setSelectedPlayer((prev) => (prev === 4 ? 1 : prev + 1));
-    } else {
-      setSelectedPlayer((prev) => (prev === 1 ? 4 : prev - 1));
-    }
+    if (!ownedImages.length) return;
+    setSelectedPlayer((prev) =>
+      direction === "next"
+        ? (prev + 1) % ownedImages.length
+        : (prev - 1 + ownedImages.length) % ownedImages.length
+    );
   };
+  // const handlePlayerChange = (direction) => {
+  //   if (direction === "next") {
+  //     setSelectedPlayer((prev) => (prev === 4 ? 1 : prev + 1));
+  //   } else {
+  //     setSelectedPlayer((prev) => (prev === 1 ? 4 : prev - 1));
+  //   }
+  // };
 
   const handleOnlineClick = () => {
     // Prevent multiple clicks
@@ -457,7 +530,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       >
         <MetaheadTitle />
       </div>
-
       {/* Player Selector - Positioned on the left */}
       <div
         style={{
@@ -470,12 +542,13 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       >
         {/* Level and Coin UI */}
         <div className={`${isConnected ? "block" : "hidden"} mb-4`}>
-          <div style={{ marginBottom: 24 }}>
+          <div style={{ marginBottom: 12 }}>
             <LevelProgressBar level={1} xp={0} />
             <CoinDisplay />
           </div>
           <PlayerSelect
-            selectedPlayer={selectedPlayer}
+            ownedImages={ownedImages}
+            selectedIdx={selectedPlayer}
             onPlayerChange={handlePlayerChange}
           />
           {/* Redeem Chests Section */}
@@ -522,7 +595,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           </div>
         </div>
       </div>
-
       {/* Game Buttons - Positioned on the right */}
       <div
         style={{
@@ -547,6 +619,7 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           <PixelButton
             variant="menu"
             size="hald-custom"
+            style={{ fontSize: 25, padding: "30px 55px" }}
             onClick={handleOnlineClick}
             disabled={isMatchmaking || roomJoined}
           >
@@ -589,26 +662,19 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
             1 VS AI
           </PixelButton>
         </div>
-        <PixelButton variant="menu" size="large" onClick={onMarketplace}>
+        <PixelButton
+          variant="menu"
+          size="large"
+          style={{ fontSize: 25, padding: "30px 55px" }}
+          onClick={onMarketplace}
+        >
           MARKETPLACE
         </PixelButton>
       </div>
-
       <CoinModal
         open={showCoinTransferModal}
         onClose={() => setShowCoinTransferModal(false)}
       >
-        <span
-          style={{
-            color: "#fde047",
-            fontFamily: '"Press Start 2P", monospace',
-            fontSize: 20,
-            marginBottom: 24,
-            textAlign: "center",
-          }}
-        >
-          Cross-chain coin transfer coming soon!
-        </span>
         <PixelButton
           variant="menu"
           size="half-custom"
@@ -617,11 +683,9 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           CLOSE
         </PixelButton>
       </CoinModal>
-
       {showChestModal && (
         <ChestRedeemModal onClose={() => setShowChestModal(false)} />
       )}
-
       {/* Matchmaking Modal */}
       {(isMatchmaking ||
         roomJoined ||
@@ -762,7 +826,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
           </div>
         </div>
       )}
-
       {/* CSS for loading animation */}
       <style jsx>{`
         @keyframes spin {

@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./Tabs";
 import NewAuctionModal from "./NewAuctionModal";
 import { fetchAuctionData } from "../lib/graphql/client";
 
-const auctionData = [
+const mockAuctionData = [
   {
     id: "1",
     rarity: "COMMON",
@@ -207,12 +207,11 @@ const Marketplace = ({ onBack }) => {
     try {
       const data = await fetchAuctionData(address);
       // setAuctions(data);
-      setAuctions([...auctionData]);
+      setAuctions([...mockAuctionData]);
     } catch (err) {
       console.error("Failed to load auction data:", err);
       setError("Failed to load auctions. Please try again.");
       // Fallback to dummy data if API fails
-      setAuctions([...auctionData]);
     } finally {
       setLoading(false);
     }

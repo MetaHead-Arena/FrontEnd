@@ -5024,6 +5024,8 @@ export class OnlineGameScene extends Phaser.Scene {
     const sceneActive = !!(
       this.scene &&
       this.scene.isActive &&
+      typeof this.scene.isActive === "function" &&
+      this.scene.manager &&
       this.scene.isActive()
     );
 
@@ -5358,6 +5360,8 @@ export class OnlineGameScene extends Phaser.Scene {
             this &&
             this.scene &&
             this.scene.isActive &&
+            typeof this.scene.isActive === "function" &&
+            this.scene.manager &&
             this.scene.isActive()
           ),
         }
@@ -5367,7 +5371,13 @@ export class OnlineGameScene extends Phaser.Scene {
     }
 
     // Double-check scene state
-    if (this.scene && this.scene.isActive && !this.scene.isActive()) {
+    if (
+      this.scene &&
+      this.scene.isActive &&
+      typeof this.scene.isActive === "function" &&
+      this.scene.manager &&
+      !this.scene.isActive()
+    ) {
       console.warn(`Cannot show message "${message}" - scene is not active`);
       console.log(`📢 Message (console only): "${message}"`);
       return;

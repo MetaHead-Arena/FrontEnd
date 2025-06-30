@@ -247,7 +247,7 @@ export default function GameView() {
   }, []);
 
   if (marketplaceMode) {
-    return <Marketplace onReturn={handleReturnFromMarketplace} />;
+    return <Marketplace onBack={handleReturnFromMarketplace} />;
   }
 
   if (gameMode) {

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
+/* Google font now loaded in layout.tsx head for better performance */
 
 .metahead-title {
   text-align: center;
@@ -181,4 +181,30 @@
   color: #fff;
   text-shadow: 1px 1px 0 #000;
   letter-spacing: 1px; */
+}
+
+.player-select-preview::-webkit-scrollbar,
+.player-select-stats::-webkit-scrollbar {
+  width: 8px;
+  background: #23234c;
+  border-radius: 6px;
+}
+
+.player-select-preview::-webkit-scrollbar-thumb,
+.player-select-stats::-webkit-scrollbar-thumb {
+  background: #fde047;
+  border-radius: 6px;
+  border: 2px solid #23234c;
+}
+
+.player-select-preview::-webkit-scrollbar-thumb:hover,
+.player-select-stats::-webkit-scrollbar-thumb:hover {
+  background: #ffd600;
+}
+
+/* For Firefox */
+.player-select-preview,
+.player-select-stats {
+  scrollbar-width: thin;
+  scrollbar-color: #fde047 #23234c;
 }

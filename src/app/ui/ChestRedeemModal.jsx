@@ -9,137 +9,184 @@ import {
   useReadContract,
   useWaitForTransactionReceipt,
   useConfig,
+  useChainId,
 } from "wagmi";
 import { writeContract, waitForTransactionReceipt } from "wagmi/actions";
 
+const commonChestImg = "/common-chest.png";
+const rareChestImg = "/rare-chest.png";
+const legendaryChestImg = "/legendary-chest.png";
+
 const chestTypes = [
-  { label: "Common", cost: 10, img: "/common-chest.png" },
-  { label: "Rare", cost: 50, img: "/rare-chest.png" },
-  { label: "Legendary", cost: 100, img: "/legendary-chest.png" },
+  { label: "Common", cost: 10, img: commonChestImg },
+  { label: "Rare", cost: 50, img: rareChestImg },
+  { label: "Legendary", cost: 100, img: legendaryChestImg },
 ];
 
 const ChestRedeemModal = ({ onClose }) => {
   const { address } = useAccount();
+  const chainId = useChainId();
   const config = useConfig();
-  const [isBusy, setIsBusy] = useState(false);
-  const [currentStep, setCurrentStep] = useState("");
-  const [pendingTx, setPendingTx] = useState(null);
-  const [pendingOpenTx, setPendingOpenTx] = useState(null);
+  const [buyingBoxType, setBuyingBoxType] = useState(null); // Track which box is being bought
+  const [openingBoxType, setOpeningBoxType] = useState(null); // Track which box is being opened
+  const [pendingTx, setPendingTx] = useState(null); // Track pending transaction
+  const [pendingOpenTx, setPendingOpenTx] = useState(null); // Track pending open transaction
+  const [currentStep, setCurrentStep] = useState(""); // Track current step
 
   const { data, refetch } = useReadContract({
-    address: MYSTERY_BOX_ADDRESS,
+    address: MYSTERY_BOX_ADDRESS[chainId],
     abi: MYSTERY_BOX_ABI,
     functionName: "getNumOfBox",
     args: [address],
-    watch: true,
+    watch: true, // optional: auto-update on block changes
   });
 
-  // Wait for buy confirmation
-  useWaitForTransactionReceipt({
+  // Hook for waiting for transaction confirmation (only for the final buy transaction)
+  const { isLoading: isConfirming } = useWaitForTransactionReceipt({
     hash: pendingTx,
     enabled: !!pendingTx,
     onSuccess: () => {
+      // Refresh the box counts when transaction is confirmed
       refetch();
       setPendingTx(null);
+      setBuyingBoxType(null);
       setCurrentStep("");
-      setIsBusy(false);
       alert("Box purchased successfully!");
     },
-    onError: (err) => {
-      console.error("Purchase failed:", err);
+    onError: (error) => {
+      console.error("Purchase transaction failed:", error);
       setPendingTx(null);
+      setBuyingBoxType(null);
       setCurrentStep("");
-      setIsBusy(false);
-      alert("Purchase failed. Try again.");
+      alert("Purchase transaction failed. Please try again.");
     },
   });
 
-  // Wait for open confirmation
-  useWaitForTransactionReceipt({
+  // Hook for waiting for open transaction confirmation
+  const { isLoading: isOpenConfirming } = useWaitForTransactionReceipt({
     hash: pendingOpenTx,
     enabled: !!pendingOpenTx,
-    onSuccess: () => {
+    onSuccess: (receipt) => {
+      // Refresh the box counts when transaction is confirmed
       refetch();
       setPendingOpenTx(null);
-      setCurrentStep("");
-      setIsBusy(false);
+      setOpeningBoxType(null);
       alert("Box opened successfully!");
     },
-    onError: (err) => {
-      console.error("Open failed:", err);
+    onError: (error) => {
+      console.error("Open transaction failed:", error);
       setPendingOpenTx(null);
-      setCurrentStep("");
-      setIsBusy(false);
-      alert("Open failed. Try again.");
+      setOpeningBoxType(null);
+      alert("Open transaction failed. Please try again.");
     },
   });
 
+  // Function to get box price for a specific box type
   const getBoxPrice = (boxType) => {
-    const costs = [10, 50, 100];
-    return BigInt(costs[boxType] * 10 ** 18);
+    const costs = [10, 50, 100]; // Common, Rare, Legendary costs in tokens
+    return BigInt(costs[boxType] * 10 ** 18); // Convert to wei (18 decimals)
   };
 
-  const handleBuyBox = async (boxType) => {
-    if (!address) return alert("Connect your wallet first.");
-    try {
-      setIsBusy(true);
-      setCurrentStep("Approving tokens...");
-
-      const boxPrice = getBoxPrice(boxType);
-
-      const approveTx = await writeContract(config, {
-        address: GAME_TOKEN_ADDRESS,
-        abi: GAME_TOKEN_ABI,
-        functionName: "approve",
-        args: [MYSTERY_BOX_ADDRESS, boxPrice],
-      });
-
-      setCurrentStep("Waiting for approval...");
-      await waitForTransactionReceipt(config, { hash: approveTx.hash });
-
-      setCurrentStep("Buying box...");
-      const buyTx = await writeContract(config, {
-        address: MYSTERY_BOX_ADDRESS,
-        abi: MYSTERY_BOX_ABI,
-        functionName: "buyBox",
-        args: [boxType],
-      });
-
-      setPendingTx(buyTx.hash); // ✅ only pass the hash
-      setCurrentStep("Waiting for purchase confirmation...");
-    } catch (err) {
-      console.error("Buy error:", err);
-      alert("Buy failed. Try again.");
-      setIsBusy(false);
-      setCurrentStep("");
-    }
-  };
-
+  // Function to handle opening a box
   const handleOpenBox = async (boxType) => {
-    if (!address) return alert("Connect your wallet first.");
-    if (!data || !data[boxType] || data[boxType] === 0n)
-      return alert("You don't have any boxes of this type!");
+    if (!address) {
+      alert("Please connect your wallet first!");
+      return;
+    }
+    // Check if user has boxes to open
+    if (!data || !data[boxType] || data[boxType] === 0n) {
+      alert("You don't have any boxes of this type to open!");
+      return;
+    }
 
     try {
-      setIsBusy(true);
-      setCurrentStep("Opening box...");
+      setOpeningBoxType(boxType);
 
-      const openTx = await writeContract(config, {
-        address: MYSTERY_BOX_ADDRESS,
+      const openResult = await writeContract(config, {
+        address: MYSTERY_BOX_ADDRESS[chainId],
         abi: MYSTERY_BOX_ABI,
         functionName: "openBox",
         args: [boxType],
       });
 
-      setPendingOpenTx(openTx.hash); // ✅ only pass the hash
-      setCurrentStep("Waiting for open confirmation...");
-    } catch (err) {
-      console.error("Open error:", err);
-      alert("Open failed. Try again.");
-      setIsBusy(false);
+      setPendingOpenTx(openResult);
+    } catch (error) {
+      console.error("Error opening box:", error);
+      alert("Failed to open box. Please try again.");
+      setOpeningBoxType(null);
+    }
+  };
+
+  // Function to handle the full buy process (approve + buy)
+  const handleBuyBox = async (boxType) => {
+    if (!address) {
+      alert("Please connect your wallet first!");
+      return;
+    }
+
+    try {
+      setBuyingBoxType(boxType);
+      const boxPrice = getBoxPrice(boxType);
+
+      // Set a timeout to reset states if process takes too long (5 minutes)
+      const timeoutId = setTimeout(() => {
+        setBuyingBoxType(null);
+        setCurrentStep("");
+        alert("Transaction timeout. Please try again.");
+      }, 5 * 60 * 1000); // 5 minutes
+
+      // Step 1: Approve tokens
+      setCurrentStep("Approving tokens...");
+
+      const approveHash = await writeContract(config, {
+        address: GAME_TOKEN_ADDRESS[chainId],
+        abi: GAME_TOKEN_ABI,
+        functionName: "approve",
+        args: [MYSTERY_BOX_ADDRESS[chainId], boxPrice],
+      });
+
+      setCurrentStep("Waiting for approval confirmation...");
+
+      // Wait for approval transaction to be confirmed
+      await waitForTransactionReceipt(config, {
+        hash: approveHash,
+        timeout: 60000, // 60 seconds timeout
+      });
+
+      setCurrentStep("Buying box...");
+
+      // Step 2: Buy the box (after approval is confirmed)
+      const buyResult = await writeContract(config, {
+        address: MYSTERY_BOX_ADDRESS[chainId],
+        abi: MYSTERY_BOX_ABI,
+        functionName: "buyBox",
+        args: [boxType],
+      });
+
+      setPendingTx(buyResult);
+      setCurrentStep("Waiting for purchase confirmation...");
+
+      // Clear timeout since we successfully submitted the buy transaction
+      clearTimeout(timeoutId);
+    } catch (error) {
+      console.error("Error in buy process:", error);
+      alert("Failed to complete purchase. Please try again.");
+      setBuyingBoxType(null);
       setCurrentStep("");
     }
   };
+
+  // Check if a specific box type is being bought
+  const isBoxBeingBought = (boxType) => {
+    return buyingBoxType === boxType;
+  };
+
+  // Check if a specific box type is being opened
+  const isBoxBeingOpened = (boxType) => {
+    return openingBoxType === boxType;
+  };
+
+  // console.log("ChestRedeemModal data:", data); // Array of counts like [0n, 1n, 2n]
 
   return (
     <div
@@ -192,6 +239,7 @@ const ChestRedeemModal = ({ onClose }) => {
         </button>
         <h2
           style={{
+            fontFamily: "inherit",
             fontSize: 32,
             marginBottom: 24,
             letterSpacing: 2,
@@ -241,7 +289,7 @@ const ChestRedeemModal = ({ onClose }) => {
                     boxShadow: "1px 1px #bfa000",
                   }}
                 >
-                  x {data ? data[i]?.toString() : 0}
+                  x {data ? data[i]?.toString() : null}
                 </span>
               </div>
               <div
@@ -259,46 +307,65 @@ const ChestRedeemModal = ({ onClose }) => {
               >
                 <button
                   onClick={() => handleBuyBox(i)}
-                  disabled={isBusy || !address}
+                  disabled={isBoxBeingBought(i) || !address}
                   style={{
-                    background: isBusy ? "#ccc" : "#ffe066",
+                    background: isBoxBeingBought(i) ? "#ccc" : "#ffe066",
                     border: "3px solid #e0b800",
                     borderRadius: 6,
+                    fontFamily: "inherit",
                     fontWeight: "bold",
                     fontSize: 16,
                     padding: "12px 18px",
-                    cursor: isBusy || !address ? "not-allowed" : "pointer",
+                    cursor:
+                      isBoxBeingBought(i) || !address
+                        ? "not-allowed"
+                        : "pointer",
                     boxShadow: "2px 2px #bfa000",
-                    opacity: isBusy || !address ? 0.6 : 1,
+                    opacity: isBoxBeingBought(i) || !address ? 0.6 : 1,
                     minHeight: "48px",
                   }}
                 >
-                  {isBusy && currentStep
-                    ? currentStep
+                  {isBoxBeingBought(i)
+                    ? currentStep || "PROCESSING..."
                     : `BUY (${chest.cost} COINS)`}
                 </button>
                 <button
                   onClick={() => handleOpenBox(i)}
-                  disabled={isBusy || !address || !data || data[i] === 0n}
+                  disabled={
+                    isBoxBeingOpened(i) ||
+                    !address ||
+                    !data ||
+                    !data[i] ||
+                    data[i] === 0n
+                  }
                   style={{
-                    background: isBusy ? "#ccc" : "#fff",
+                    background: isBoxBeingOpened(i) ? "#ccc" : "#fff",
                     border: "3px solid #e0b800",
                     borderRadius: 6,
+                    fontFamily: "inherit",
                     fontWeight: "bold",
                     fontSize: 18,
                     padding: "12px 18px",
                     cursor:
-                      isBusy || !address || !data || data[i] === 0n
+                      isBoxBeingOpened(i) ||
+                      !address ||
+                      !data ||
+                      !data[i] ||
+                      data[i] === 0n
                         ? "not-allowed"
                         : "pointer",
                     boxShadow: "2px 2px #bfa000",
                     opacity:
-                      isBusy || !address || !data || data[i] === 0n ? 0.6 : 1,
+                      isBoxBeingOpened(i) ||
+                      !address ||
+                      !data ||
+                      !data[i] ||
+                      data[i] === 0n
+                        ? 0.6
+                        : 1,
                   }}
                 >
-                  {isBusy && currentStep.startsWith("Opening")
-                    ? "OPENING..."
-                    : "OPEN"}
+                  {isBoxBeingOpened(i) ? "OPENING..." : "OPEN"}
                 </button>
               </div>
             </div>

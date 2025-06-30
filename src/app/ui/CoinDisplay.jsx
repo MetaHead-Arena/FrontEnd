@@ -2,6 +2,7 @@ import React, { useEffect, useState, memo } from "react";
 import { formatUnits } from "viem"; // ✅ Built-in in wagmi/viem
 import { useAccount, useReadContract } from "wagmi";
 import { GAME_TOKEN_ADDRESS, GAME_TOKEN_ABI } from "../lib/contracts/gameToken";
+import { useChainId } from "wagmi";
 
 // Animated coin sprite frames
 const coinFrames = [
@@ -36,10 +37,11 @@ AnimatedCoin.displayName = "AnimatedCoin";
 
 const CoinDisplay = () => {
   const { address } = useAccount();
+  const chainId = useChainId();
   const [displayBalance, setDisplayBalance] = useState("0");
 
   const { data } = useReadContract({
-    address: GAME_TOKEN_ADDRESS,
+    address: GAME_TOKEN_ADDRESS[chainId],
     abi: GAME_TOKEN_ABI,
     functionName: "balanceOf",
     args: [address],
