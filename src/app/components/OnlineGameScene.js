@@ -405,19 +405,42 @@ export class OnlineGameScene extends Phaser.Scene {
     });
 
     // Rematch events
-    this.socketService.on("rematch-request", (data) => {
+    this.socketService.on("rematch-requested", (data) => {
       console.log("Rematch requested:", data);
       this.handleRematchRequest(data);
     });
 
     this.socketService.on("rematch-confirmed", (data) => {
-      console.log("Rematch confirmed:", data);
-      this.handleRematchConfirmed(data);
+      console.log("Rematch confirmed by both players:", data);
+
+      // Show confirmation message
+      this.showMessage("Rematch accepted! Starting new game...", 3000);
+
+      // Clear current overlay
+      if (this.overlayGroup) {
+        this.overlayGroup.clear(true, true);
+        this.overlayGroup = null;
+      }
+
+      // Reset game state for rematch
+      this.resetGameStateForRematch();
+
+      // The server will send a new game-started event
     });
 
     this.socketService.on("rematch-declined", (data) => {
       console.log("Rematch declined:", data);
-      this.handleRematchDeclined(data);
+
+      // Show decline message
+      this.showMessage("Opponent declined rematch. Returning to menu...", 3000);
+
+      // Update rematch button to show declined state
+      this.updateRematchButtonState("REMATCH DECLINED", 0xff4444, false);
+
+      // Automatically leave room after a delay
+      this.time.delayedCall(3000, () => {
+        this.leaveRoom();
+      });
     });
 
     // Error handling
@@ -757,9 +780,8 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   startGameTimer() {
-    // For online multiplayer, timer is controlled by the server
-    // But we run a local timer as backup to prevent freezing
-    console.log("⏰ Starting game timer - local timer + server sync");
+    // For online multiplayer, timer is SERVER-CONTROLLED with local backup
+    console.log("⏰ Starting SERVER-SYNCHRONIZED timer system");
 
     // Don't start a local timer unless game has actually started
     if (!this.gameStarted) {
@@ -767,7 +789,7 @@ export class OnlineGameScene extends Phaser.Scene {
       return;
     }
 
-    // Don't override game time if it was set by server data
+    // Use server-provided game time or default
     if (this.gameTime <= 0 || this.gameTime === GAME_CONFIG.GAME_DURATION) {
       this.gameTime = GAME_CONFIG.GAME_DURATION;
       console.log(`⏰ Using default game duration: ${this.gameTime}s`);
@@ -777,27 +799,99 @@ export class OnlineGameScene extends Phaser.Scene {
 
     this.updateTimerDisplay();
 
-    // Start local timer as backup - will be synced by server updates
+    // Start a BACKUP local timer that syncs with server updates
     if (this.timerEvent) {
       console.log("⏰ Destroying existing timer event");
       this.timerEvent.destroy();
     }
 
+    // Server sync timer - much slower, just for backup
     this.timerEvent = this.time.addEvent({
-      delay: 1000, // 1 second
-      callback: this.updateTimer,
+      delay: 5000, // 5 seconds - very slow backup
+      callback: this.syncTimerWithServer,
       callbackScope: this,
       loop: true,
     });
 
+    // Track when we last received a server update
+    this.lastServerTimerUpdate = Date.now();
+    this.serverTimerUpdateTimeout = 10000; // 10 seconds timeout
+
     console.log(
-      `✅ Local timer started successfully! Initial time: ${this.gameTime}s`
+      `✅ Server-synchronized timer started! Initial time: ${this.gameTime}s`
     );
+  }
+
+  syncTimerWithServer() {
+    if (!this.gameStarted || this.gameOver) return;
+
+    const timeSinceServerUpdate = Date.now() - this.lastServerTimerUpdate;
+
+    // If we haven't heard from server in a while, request sync
+    if (timeSinceServerUpdate > this.serverTimerUpdateTimeout) {
+      console.warn("⚠️ Timer sync timeout - requesting server update");
+      if (this.socketService && this.socketService.isSocketConnected()) {
+        this.socketService.getSocket().emit("request-timer-sync", {
+          roomId: this.socketService.getCurrentRoomId(),
+          localTime: this.gameTime,
+        });
+      }
+    }
+  }
+
+  updateTimer() {
+    // DEPRECATED: This method is replaced by server-driven timer
+    // Keeping for compatibility but logging warning
+    console.warn("⚠️ updateTimer() called - this should be server-driven now");
+    this.updateTimerBackup();
+  }
+
+  updateTimerBackup() {
+    // Backup timer: only run if we haven't received server updates recently
+    const timeSinceServerUpdate = Date.now() - this.lastServerTimerUpdate;
+
     console.log(
-      `⏰ Timer event created: ${!!this.timerEvent}, gameStarted: ${
-        this.gameStarted
-      }`
+      `⏰ updateTimerBackup() called - gameStarted: ${this.gameStarted}, gameOver: ${this.gameOver}, isPaused: ${this.isPaused}, gameTime: ${this.gameTime}, timeSinceServerUpdate: ${timeSinceServerUpdate}ms`
     );
+
+    if (!this.gameStarted || this.gameOver || this.isPaused) {
+      console.log(
+        `❌ Backup timer update skipped - gameStarted: ${this.gameStarted}, gameOver: ${this.gameOver}, isPaused: ${this.isPaused}`
+      );
+      return;
+    }
+
+    // Only run backup timer if server updates are stale
+    if (timeSinceServerUpdate < this.serverTimerUpdateTimeout) {
+      console.log(`✅ Server timer is active, skipping backup timer`);
+      return;
+    }
+
+    console.log(`⚠️ Server timer appears stale, running backup timer`);
+
+    // Stop timer if game time is 0 or negative
+    if (this.gameTime <= 0) {
+      console.log(`⏰ Backup timer reached 0 - stopping local timer`);
+      this.gameTime = 0;
+      this.updateTimerDisplay();
+
+      // Stop the timer to prevent infinite logging
+      if (this.timerEvent) {
+        this.timerEvent.destroy();
+        this.timerEvent = null;
+        console.log("⏰ Backup timer stopped at 0 seconds");
+      }
+
+      // Wait for server to send game-ended event
+      console.log("⏰ Waiting for server to confirm game end");
+      return;
+    }
+
+    // Count down locally as backup
+    this.gameTime--;
+    this.updateTimerDisplay();
+
+    console.log(`⏰ Backup timer: ${this.gameTime}s remaining`);
   }
 
   startPowerupSystem() {
@@ -809,6 +903,207 @@ export class OnlineGameScene extends Phaser.Scene {
 
     this.schedulePowerupSpawn();
     console.log("Online powerup system started");
+  }
+
+  schedulePowerupSpawn() {
+    if (this.gameOver) return;
+
+    const delay = Phaser.Math.Between(
+      GAME_CONFIG.POWERUPS.SPAWN_INTERVAL_MIN,
+      GAME_CONFIG.POWERUPS.SPAWN_INTERVAL_MAX
+    );
+
+    this.powerupSpawnTimer = this.time.delayedCall(delay, () => {
+      this.spawnPowerup();
+      this.schedulePowerupSpawn();
+    });
+  }
+
+  spawnPowerup() {
+    if (this.gameOver) return;
+
+    // Random position in upper half of field
+    const x = Phaser.Math.Between(100, GAME_CONFIG.CANVAS_WIDTH - 100);
+    const y = Phaser.Math.Between(150, 350);
+
+    // Random power-up type
+    const types = Object.keys(GAME_CONFIG.POWERUPS.TYPES);
+    const randomType = types[Phaser.Math.Between(0, types.length - 1)];
+    const powerupConfig = GAME_CONFIG.POWERUPS.TYPES[randomType];
+
+    // Create power-up visual
+    const powerup = this.add.circle(
+      x,
+      y,
+      GAME_CONFIG.POWERUPS.SIZE,
+      powerupConfig.color
+    );
+    powerup.setStrokeStyle(4, 0xffffff);
+    powerup.setDepth(800);
+
+    // Add icon text
+    const icon = this.add.text(x, y, powerupConfig.icon, {
+      fontFamily: '"Press Start 2P"',
+      fontSize: "20px",
+      fill: "#ffffff",
+    });
+    icon.setOrigin(0.5, 0.5);
+    icon.setDepth(801);
+
+    // Add physics
+    this.physics.add.existing(powerup);
+    powerup.body.setCircle(GAME_CONFIG.POWERUPS.SIZE);
+    powerup.body.setImmovable(true);
+    powerup.body.setGravityY(-GAME_CONFIG.GRAVITY);
+    powerup.body.setVelocity(0, 0);
+
+    // Floating animation
+    this.tweens.add({
+      targets: [powerup, icon],
+      y: y - 5,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // Glowing effect
+    this.tweens.add({
+      targets: powerup,
+      alpha: 0.7,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    // Store power-up data
+    const powerupData = {
+      sprite: powerup,
+      icon: icon,
+      type: randomType,
+      config: powerupConfig,
+      collected: false,
+      lifetimeTimer: null,
+    };
+
+    this.powerups.push(powerupData);
+
+    // Collision with ball
+    this.physics.add.overlap(this.ball, powerup, () => {
+      this.collectPowerup(powerupData);
+    });
+
+    // Auto-remove after lifetime
+    powerupData.lifetimeTimer = this.time.delayedCall(
+      GAME_CONFIG.POWERUPS.LIFETIME,
+      () => {
+        this.removePowerup(powerupData);
+      }
+    );
+  }
+
+  collectPowerup(powerupData) {
+    if (powerupData.collected) return;
+
+    // Create particle effect at collection point
+    this.createParticleEffect(
+      powerupData.sprite.x,
+      powerupData.sprite.y,
+      powerupData.config.color,
+      GAME_CONFIG.POWERUPS.PARTICLE_COUNT
+    );
+
+    // Apply power-up to last player who touched the ball
+    if (this.lastPlayerToTouchBall) {
+      this.lastPlayerToTouchBall.applyPowerup(powerupData.type);
+
+      // Show notification
+      this.showPowerupNotification(
+        powerupData.config.name,
+        this.lastPlayerToTouchBall
+      );
+    }
+
+    this.removePowerup(powerupData);
+  }
+
+  removePowerup(powerupData) {
+    if (powerupData.collected) return;
+    powerupData.collected = true;
+
+    // Cancel timer
+    if (powerupData.lifetimeTimer) {
+      powerupData.lifetimeTimer.destroy();
+      powerupData.lifetimeTimer = null;
+    }
+
+    // Remove from array
+    const index = this.powerups.indexOf(powerupData);
+    if (index > -1) {
+      this.powerups.splice(index, 1);
+    }
+
+    // Destroy sprites
+    if (powerupData.sprite && powerupData.sprite.active) {
+      powerupData.sprite.destroy();
+    }
+    if (powerupData.icon && powerupData.icon.active) {
+      powerupData.icon.destroy();
+    }
+  }
+
+  showPowerupNotification(powerupName, player) {
+    const playerName = player.attributes?.name || "Player";
+    const text = this.add.text(
+      GAME_CONFIG.CANVAS_WIDTH / 2,
+      200,
+      `${playerName} got ${powerupName}!`,
+      {
+        fontSize: "24px",
+        fill: "#ffff00",
+        stroke: "#000000",
+        strokeThickness: 2,
+        align: "center",
+      }
+    );
+    text.setOrigin(0.5, 0.5);
+    text.setDepth(2000);
+
+    // Animate notification
+    this.tweens.add({
+      targets: text,
+      y: 150,
+      alpha: 0,
+      duration: 2000,
+      ease: "Power2",
+      onComplete: () => {
+        text.destroy();
+      },
+    });
+  }
+
+  createParticleEffect(x, y, color, count = 10) {
+    for (let i = 0; i < count; i++) {
+      const size = Phaser.Math.Between(2, 6);
+      const particle = this.add.circle(x, y, size, color, 0.8);
+      particle.setDepth(1000);
+
+      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      const speed = Phaser.Math.Between(50, 150);
+      const velocityX = Math.cos(angle) * speed;
+      const velocityY = Math.sin(angle) * speed;
+
+      this.tweens.add({
+        targets: particle,
+        x: x + velocityX,
+        y: y + velocityY,
+        alpha: 0,
+        scale: 0,
+        duration: 800,
+        ease: "Power2",
+        onComplete: () => particle.destroy(),
+      });
+    }
   }
 
   update() {
@@ -1938,77 +2233,6 @@ export class OnlineGameScene extends Phaser.Scene {
     // Simplified for online
   }
 
-  updateTimer() {
-    // Hybrid timer: local countdown with server sync capability
-    console.log(
-      `⏰ updateTimer() called - gameStarted: ${this.gameStarted}, gameOver: ${this.gameOver}, isPaused: ${this.isPaused}, gameTime: ${this.gameTime}`
-    );
-
-    if (!this.gameStarted || this.gameOver || this.isPaused) {
-      console.log(
-        `❌ Timer update skipped - gameStarted: ${this.gameStarted}, gameOver: ${this.gameOver}, isPaused: ${this.isPaused}`
-      );
-      return;
-    }
-
-    // Stop timer if game time is 0 or negative
-    if (this.gameTime <= 0) {
-      console.log(`⏰ Timer reached 0 - stopping local timer`);
-      this.gameTime = 0;
-      this.updateTimerDisplay();
-
-      // Stop the timer to prevent infinite logging
-      if (this.timerEvent) {
-        this.timerEvent.destroy();
-        this.timerEvent = null;
-        console.log("⏰ Local timer stopped at 0 seconds");
-      }
-
-      // Wait for server to send game-ended event
-      console.log("⏰ Waiting for server to confirm game end");
-      return;
-    }
-
-    // Count down locally to prevent freezing
-    this.gameTime--;
-    this.updateTimerDisplay();
-
-    // Log occasional timer updates for debugging
-    if (this.gameTime % 10 === 0 || this.gameTime <= 10) {
-      console.log(`⏰ Local timer: ${this.gameTime}s remaining`);
-    }
-
-    // Always log first few seconds for debugging
-    if (this.gameTime >= 57) {
-      console.log(`⏰ Local timer countdown: ${this.gameTime}s remaining`);
-    }
-
-    // Note: Server updates via handleGameStateUpdate() or handleTimerUpdate()
-    // will override this.gameTime to keep sync with server
-  }
-
-  checkBallBounds() {
-    if (
-      this.ball.y > GAME_CONFIG.CANVAS_HEIGHT + 50 ||
-      this.ball.x < -50 ||
-      this.ball.x > GAME_CONFIG.CANVAS_WIDTH + 50
-    ) {
-      this.resetBall();
-    }
-  }
-
-  resetBall() {
-    this.ball.setPosition(
-      GAME_CONFIG.BALL.STARTING_POSITION.x,
-      GAME_CONFIG.BALL.STARTING_POSITION.y
-    );
-    this.ball.body.setVelocity(0, 0);
-  }
-
-  schedulePowerupSpawn() {
-    // Simplified for online - may implement later
-  }
-
   handleMatchEnded(data) {
     this.gameOver = true;
     this.player1Score = data.finalScore?.player1 || 0;
@@ -2071,16 +2295,696 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   handleGameEnd() {
+    console.log("🏁 Game ending initiated");
     this.gameOver = true;
+    this.gameStarted = false; // Prevent further game actions
 
-    // Clean up any local timer events (though they shouldn't exist in server-controlled mode)
+    // Clean up any local timer events
     if (this.timerEvent) {
       this.timerEvent.destroy();
       this.timerEvent = null;
       console.log("Local timer event cleaned up");
     }
 
-    console.log("Online game ended - timer is now server-controlled");
+    // Clean up powerup system
+    if (this.powerupSpawnTimer) {
+      this.powerupSpawnTimer.destroy();
+      this.powerupSpawnTimer = null;
+    }
+
+    this.powerups.forEach((powerup) => {
+      if (powerup.lifetimeTimer) powerup.lifetimeTimer.destroy();
+      if (powerup.sprite && powerup.sprite.active) powerup.sprite.destroy();
+      if (powerup.icon && powerup.icon.active) powerup.icon.destroy();
+    });
+    this.powerups = [];
+
+    // Pause physics instead of stopping completely
+    this.physics.world.pause();
+
+    // Determine winner and show game end screen
+    let resultMessage = "";
+    let winner = "draw";
+
+    if (this.player1Score > this.player2Score) {
+      winner = "player1";
+      resultMessage =
+        this.playerPosition === "player1"
+          ? "🏆 You Win! 🎉"
+          : "💔 You Lost! 💔";
+    } else if (this.player2Score > this.player1Score) {
+      winner = "player2";
+      resultMessage =
+        this.playerPosition === "player2"
+          ? "🏆 You Win! 🎉"
+          : "💔 You Lost! 💔";
+    } else {
+      resultMessage = "🤝 It's a Draw! 🤝";
+    }
+
+    // Send game end to server if we haven't already
+    if (this.socketService && this.socketService.isSocketConnected()) {
+      const gameEndData = {
+        finalScore: {
+          player1: this.player1Score,
+          player2: this.player2Score,
+        },
+        duration: GAME_CONFIG.GAME_DURATION - this.gameTime,
+        winner: winner,
+        endReason: "time_up",
+      };
+
+      console.log("📡 Sending game end to server:", gameEndData);
+      this.socketService.endGame(gameEndData);
+    }
+
+    this.showGameEndOverlay(resultMessage, winner);
+
+    console.log("🏁 Online game ended successfully");
+  }
+
+  // Show game end overlay with rematch options
+  showGameEndOverlay(resultMessage, winner) {
+    // Clear any existing overlays
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
+
+    this.overlayGroup = this.add.group();
+
+    // Semi-transparent background
+    const overlay = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH,
+        GAME_CONFIG.CANVAS_HEIGHT,
+        0x000000,
+        0.8
+      )
+      .setDepth(9999);
+    this.overlayGroup.add(overlay);
+
+    // Game Over title
+    const titleText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 150,
+        resultMessage,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "48px",
+          fill:
+            winner === "draw"
+              ? "#ffaa00"
+              : winner === this.playerPosition
+              ? "#00ff00"
+              : "#ff4444",
+          stroke: "#000000",
+          strokeThickness: 6,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(titleText);
+
+    // Final score
+    const scoreText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 80,
+        `Final Score: ${this.player1Score} - ${this.player2Score}`,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "32px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 4,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(scoreText);
+
+    // Buttons
+    this.createGameEndButtons();
+
+    // Add pulsing effect to title
+    this.tweens.add({
+      targets: titleText,
+      scaleX: 1.05,
+      scaleY: 1.05,
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: "Power2",
+    });
+  }
+
+  createGameEndButtons() {
+    const buttonWidth = 300;
+    const buttonHeight = 70;
+    const buttonSpacing = 90;
+    const startY = GAME_CONFIG.CANVAS_HEIGHT / 2 + 20;
+
+    // Rematch button
+    const rematchButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY,
+        buttonWidth,
+        buttonHeight,
+        0x22c55e,
+        1
+      )
+      .setStrokeStyle(4, 0x16a34a)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(rematchButton);
+
+    const rematchText = this.add
+      .text(GAME_CONFIG.CANVAS_WIDTH / 2, startY, "REQUEST REMATCH", {
+        fontFamily: '"Press Start 2P"',
+        fontSize: "20px",
+        fill: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3,
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(rematchText);
+
+    // Leave room button
+    const leaveButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY + buttonSpacing,
+        buttonWidth,
+        buttonHeight,
+        0xdc2626,
+        1
+      )
+      .setStrokeStyle(4, 0x991b1b)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(leaveButton);
+
+    const leaveText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY + buttonSpacing,
+        "LEAVE ROOM",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(leaveButton);
+
+    // Button interactions
+    this.setupGameEndButtonInteractions(
+      rematchButton,
+      rematchText,
+      leaveButton,
+      leaveText
+    );
+  }
+
+  setupGameEndButtonInteractions(
+    rematchButton,
+    rematchText,
+    leaveButton,
+    leaveText
+  ) {
+    // Rematch button
+    rematchButton.on("pointerover", () => {
+      rematchButton.setFillStyle(0x15803d);
+      this.tweens.add({
+        targets: [rematchButton, rematchText],
+        scaleX: 1.05,
+        scaleY: 1.05,
+        duration: 100,
+        ease: "Power2",
+      });
+    });
+
+    rematchButton.on("pointerout", () => {
+      rematchButton.setFillStyle(0x22c55e);
+      this.tweens.add({
+        targets: [rematchButton, rematchText],
+        scaleX: 1.0,
+        scaleY: 1.0,
+        duration: 100,
+        ease: "Power2",
+      });
+    });
+
+    rematchButton.on("pointerdown", () => {
+      this.requestRematch();
+    });
+
+    rematchText
+      .setInteractive({ useHandCursor: true })
+      .on("pointerdown", () => {
+        this.requestRematch();
+      });
+
+    // Leave button
+    leaveButton.on("pointerover", () => {
+      leaveButton.setFillStyle(0xb91c1c);
+      this.tweens.add({
+        targets: [leaveButton, leaveText],
+        scaleX: 1.05,
+        scaleY: 1.05,
+        duration: 100,
+        ease: "Power2",
+      });
+    });
+
+    leaveButton.on("pointerout", () => {
+      leaveButton.setFillStyle(0xdc2626);
+      this.tweens.add({
+        targets: [leaveButton, leaveText],
+        scaleX: 1.0,
+        scaleY: 1.0,
+        duration: 100,
+        ease: "Power2",
+      });
+    });
+
+    leaveButton.on("pointerdown", () => {
+      this.leaveRoom();
+    });
+
+    leaveText.setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+      this.leaveRoom();
+    });
+  }
+
+  // Pause functionality with socket integration
+  handlePause() {
+    if (this.gameOver) return;
+
+    // Don't allow pause during goal pause or if already paused
+    if (this.pausedForGoal || this.isPaused) return;
+
+    this.isPaused = true;
+
+    // Pause physics
+    this.physics.world.pause();
+
+    // Pause timer if it exists
+    if (this.timerEvent) {
+      this.timerEvent.paused = true;
+    }
+
+    // Send pause request to server
+    if (this.socketService && this.socketService.isSocketConnected()) {
+      console.log("Sending pause request to server");
+      this.socketService.getSocket().emit("game-pause", {
+        roomId: this.socketService.getCurrentRoomId(),
+        pausedBy: this.playerPosition,
+      });
+    }
+
+    this.showPauseOverlay();
+  }
+
+  showPauseOverlay() {
+    // Clear any existing overlays
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
+
+    this.overlayGroup = this.add.group();
+
+    // Semi-transparent background
+    const overlay = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH,
+        GAME_CONFIG.CANVAS_HEIGHT,
+        0x000000,
+        0.8
+      )
+      .setDepth(9999);
+    this.overlayGroup.add(overlay);
+
+    // Pause title
+    const titleText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 120,
+        "GAME PAUSED",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "48px",
+          fill: "#ffaa00",
+          stroke: "#000000",
+          strokeThickness: 6,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(titleText);
+
+    // Waiting for opponent message
+    const waitingText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 40,
+        "Waiting for opponent to resume...",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "18px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(waitingText);
+
+    this.createPauseButtons();
+
+    // Pulse effect for title
+    this.tweens.add({
+      targets: titleText,
+      scaleX: 1.03,
+      scaleY: 1.03,
+      duration: 1200,
+      yoyo: true,
+      repeat: -1,
+      ease: "Power2",
+    });
+  }
+
+  createPauseButtons() {
+    const buttonWidth = 280;
+    const buttonHeight = 60;
+    const buttonSpacing = 80;
+    const startY = GAME_CONFIG.CANVAS_HEIGHT / 2 + 40;
+
+    // Resume button
+    const resumeButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY,
+        buttonWidth,
+        buttonHeight,
+        0x22c55e,
+        1
+      )
+      .setStrokeStyle(4, 0x16a34a)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(resumeButton);
+
+    const resumeText = this.add
+      .text(GAME_CONFIG.CANVAS_WIDTH / 2, startY, "RESUME GAME", {
+        fontFamily: '"Press Start 2P"',
+        fontSize: "18px",
+        fill: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3,
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(resumeText);
+
+    // Leave room button
+    const leaveButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY + buttonSpacing,
+        buttonWidth,
+        buttonHeight,
+        0xdc2626,
+        1
+      )
+      .setStrokeStyle(4, 0x991b1b)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(leaveButton);
+
+    const leaveText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY + buttonSpacing,
+        "LEAVE ROOM",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "18px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(leaveText);
+
+    this.setupPauseButtonInteractions(
+      resumeButton,
+      resumeText,
+      leaveButton,
+      leaveText
+    );
+  }
+
+  setupPauseButtonInteractions(
+    resumeButton,
+    resumeText,
+    leaveButton,
+    leaveText
+  ) {
+    // Resume button
+    resumeButton.on("pointerover", () => {
+      resumeButton.setFillStyle(0x15803d);
+    });
+
+    resumeButton.on("pointerout", () => {
+      resumeButton.setFillStyle(0x22c55e);
+    });
+
+    resumeButton.on("pointerdown", () => {
+      this.resumeGame();
+    });
+
+    resumeText.setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+      this.resumeGame();
+    });
+
+    // Leave button interactions (same as before)
+    leaveButton.on("pointerover", () => {
+      leaveButton.setFillStyle(0xb91c1c);
+    });
+
+    leaveButton.on("pointerout", () => {
+      leaveButton.setFillStyle(0xdc2626);
+    });
+
+    leaveButton.on("pointerdown", () => {
+      this.leaveRoom();
+    });
+
+    leaveText.setInteractive({ useHandCursor: true }).on("pointerdown", () => {
+      this.leaveRoom();
+    });
+  }
+
+  resumeGame() {
+    if (!this.isPaused) return;
+
+    // Send resume request to server
+    if (this.socketService && this.socketService.isSocketConnected()) {
+      console.log("Sending resume request to server");
+      this.socketService.getSocket().emit("game-resume", {
+        roomId: this.socketService.getCurrentRoomId(),
+        resumedBy: this.playerPosition,
+      });
+    }
+
+    // Resume will be handled when server confirms
+  }
+
+  handleGamePaused(data) {
+    console.log("Game paused by server:", data);
+
+    if (!this.isPaused) {
+      this.isPaused = true;
+      this.physics.world.pause();
+      if (this.timerEvent) {
+        this.timerEvent.paused = true;
+      }
+    }
+
+    this.showPauseOverlay();
+  }
+
+  handleGameResumed(data) {
+    console.log("Game resumed by server:", data);
+
+    if (this.isPaused) {
+      this.isPaused = false;
+      this.physics.world.resume();
+      if (this.timerEvent) {
+        this.timerEvent.paused = false;
+      }
+
+      // Clear pause overlay
+      if (this.overlayGroup) {
+        this.overlayGroup.clear(true, true);
+        this.overlayGroup = null;
+      }
+    }
+  }
+
+  // Enhanced rematch functionality
+  requestRematch() {
+    if (!this.socketService || !this.socketService.isSocketConnected()) {
+      console.error("Cannot request rematch: socket not connected");
+      this.showMessage("Connection error - cannot request rematch", 3000);
+      return;
+    }
+
+    if (!this.gameOver) {
+      console.warn("Cannot request rematch: game not over");
+      return;
+    }
+
+    console.log("🔄 Requesting rematch");
+    this.socketService.requestRematch();
+
+    // Update button to show request sent
+    this.updateRematchButtonState("REMATCH SENT...", 0x6b7280, false);
+
+    // Show status message
+    this.showMessage("Rematch request sent! Waiting for opponent...", 5000);
+  }
+
+  updateRematchButtonState(text, color, enabled) {
+    if (!this.overlayGroup) return;
+
+    const rematchButton = this.overlayGroup.children.entries.find(
+      (child) =>
+        child.type === "Rectangle" &&
+        (child.fillColor === 0x22c55e || child.fillColor === 0x6b7280)
+    );
+    if (rematchButton) {
+      rematchButton.setFillStyle(color);
+      rematchButton.setInteractive(enabled);
+    }
+
+    const rematchText = this.overlayGroup.children.entries.find(
+      (child) =>
+        child.type === "Text" &&
+        (child.text.includes("REMATCH") || child.text.includes("SENT"))
+    );
+    if (rematchText) {
+      rematchText.setText(text);
+    }
+  }
+
+  leaveRoom() {
+    console.log("🚪 Leaving room initiated");
+
+    // Clean up game state first
+    this.cleanupGameState();
+
+    if (this.socketService && this.socketService.isSocketConnected()) {
+      console.log("📡 Emitting leave-room to server");
+      this.socketService.leaveRoom();
+    } else {
+      console.warn("Socket not connected, performing local cleanup only");
+    }
+
+    // Clear overlay
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
+
+    // Show leaving message briefly
+    this.showMessage("Leaving room...", 2000);
+
+    // Navigate back to main menu after a brief delay
+    this.time.delayedCall(1000, () => {
+      this.restartGame();
+    });
+  }
+
+  cleanupGameState() {
+    console.log("🧹 Cleaning up game state");
+
+    // Reset game flags
+    this.gameStarted = false;
+    this.gameOver = false;
+    this.isPaused = false;
+    this.pausedForGoal = false;
+
+    // Stop timers
+    if (this.timerEvent) {
+      this.timerEvent.destroy();
+      this.timerEvent = null;
+    }
+
+    // Stop powerup system
+    if (this.powerupSpawnTimer) {
+      this.powerupSpawnTimer.destroy();
+      this.powerupSpawnTimer = null;
+    }
+
+    // Clean up powerups
+    this.powerups.forEach((powerup) => {
+      if (powerup.lifetimeTimer) powerup.lifetimeTimer.destroy();
+      if (powerup.sprite && powerup.sprite.active) powerup.sprite.destroy();
+      if (powerup.icon && powerup.icon.active) powerup.icon.destroy();
+    });
+    this.powerups = [];
+
+    // Resume physics in case it was paused
+    if (this.physics && this.physics.world) {
+      this.physics.world.resume();
+    }
+
+    // Reset scores
+    this.player1Score = 0;
+    this.player2Score = 0;
+    this.gameTime = GAME_CONFIG.GAME_DURATION;
+
+    // Reset ready states
+    this.isPlayerReady = false;
+    this.isOpponentReady = false;
+
+    console.log("✅ Game state cleanup complete");
+  }
+
+  restartGame() {
+    // Use the callback function to return to menu
+    if (typeof window !== "undefined" && window.__HEADBALL_RETURN_TO_MENU) {
+      window.__HEADBALL_RETURN_TO_MENU();
+    } else if (typeof window !== "undefined" && window.location) {
+      // Fallback to direct navigation
+      window.location.href = "/";
+    }
   }
 
   kickBall(player, ball) {
@@ -2608,6 +3512,9 @@ export class OnlineGameScene extends Phaser.Scene {
 
     console.log("📡 Timer-update event from server:", data);
 
+    // Mark that we received a server timer update
+    this.lastServerTimerUpdate = Date.now();
+
     if (data.timeRemaining !== undefined) {
       const oldTime = this.gameTime;
       this.gameTime = data.timeRemaining;
@@ -2615,12 +3522,20 @@ export class OnlineGameScene extends Phaser.Scene {
 
       console.log(`🔄 Timer-update sync: ${oldTime}s → ${this.gameTime}s`);
     }
+
+    // Handle additional timer data
+    if (data.elapsedTime !== undefined) {
+      console.log(`📊 Game elapsed time: ${data.elapsedTime} seconds`);
+    }
   }
 
   handleGameTimeUpdate(data) {
     if (!this.gameStarted || this.gameOver) return;
 
     console.log("📡 Game-time event from server:", data);
+
+    // Mark that we received a server timer update
+    this.lastServerTimerUpdate = Date.now();
 
     if (data.gameTime !== undefined) {
       const oldTime = this.gameTime;
@@ -2644,29 +3559,60 @@ export class OnlineGameScene extends Phaser.Scene {
         `🔄 Game-time timeRemaining sync: ${oldTime}s → ${this.gameTime}s`
       );
     }
-  }
 
-  handleTimerWarning(data) {
-    console.log("Timer warning from server:", data);
-
-    // Show visual/audio warning when time is low
-    if (data.warning === "low-time" || data.timeRemaining <= 30) {
-      console.log("⚠️ Low time warning!");
-
-      // Update timer display with warning colors
-      this.updateTimerDisplay();
-
-      // Could add additional warning effects here
-      // e.g., screen flash, warning sound, etc.
+    if (data.matchDuration !== undefined) {
+      console.log(`📊 Match duration: ${data.matchDuration} seconds`);
     }
   }
 
+  handleTimerWarning(data) {
+    console.log("⚠️ Timer warning from server:", data);
+
+    // Mark that we received a server timer update
+    this.lastServerTimerUpdate = Date.now();
+
+    // Update time if provided
+    if (data.timeRemaining !== undefined) {
+      const oldTime = this.gameTime;
+      this.gameTime = data.timeRemaining;
+      this.updateTimerDisplay();
+      console.log(`🔄 Timer warning sync: ${oldTime}s → ${this.gameTime}s`);
+    }
+
+    // Show visual/audio warning when time is low
+    if (data.warning === "low-time" || data.timeRemaining <= 30) {
+      console.log("⚠️ Low time warning - 30 seconds remaining!");
+      this.showTimerWarning("30 seconds remaining!", "#ffaa00");
+    }
+
+    if (data.warning === "critical-time" || data.timeRemaining <= 10) {
+      console.log("🚨 Critical time warning - 10 seconds remaining!");
+      this.showTimerWarning("10 seconds remaining!", "#ff0000");
+    }
+
+    // Always update timer display with warning colors
+    this.updateTimerDisplay();
+  }
+
   handleTimeUp(data) {
-    console.log("Time up event from server:", data);
+    console.log("⏰ Time up event from server:", data);
+
+    // Mark that we received a server timer update
+    this.lastServerTimerUpdate = Date.now();
 
     // Server says time is up, handle game end
     this.gameTime = 0;
     this.updateTimerDisplay();
+
+    // Stop local timer immediately
+    if (this.timerEvent) {
+      this.timerEvent.destroy();
+      this.timerEvent = null;
+      console.log("⏰ Local timer stopped due to server time-up");
+    }
+
+    // Show time up effect
+    this.showTimerWarning("TIME'S UP!", "#ff0000", 2000);
 
     // Let server handle the game end logic
     // We just update the UI to reflect time is up
@@ -2674,6 +3620,50 @@ export class OnlineGameScene extends Phaser.Scene {
       console.log("Time's up! Waiting for server to end game...");
       // The server should send a game-ended event shortly
     }
+  }
+
+  // Helper method to show timer warnings
+  showTimerWarning(message, color = "#ffaa00", duration = 1500) {
+    // Create warning text
+    const warningText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 100,
+        message,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "32px",
+          fill: color,
+          stroke: "#000000",
+          strokeThickness: 4,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(5000);
+
+    // Animate warning
+    this.tweens.add({
+      targets: warningText,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 200,
+      yoyo: true,
+      repeat: 2,
+      ease: "Power2",
+    });
+
+    // Fade out and destroy
+    this.time.delayedCall(duration, () => {
+      this.tweens.add({
+        targets: warningText,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => {
+          warningText.destroy();
+        },
+      });
+    });
   }
 
   handleSocketDisconnected(data) {
@@ -2699,20 +3689,240 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   handleRematchRequest(data) {
-    console.log("Rematch requested:", data);
-    // Show rematch request UI
-    // You could implement rematch functionality here
+    console.log("🔄 Rematch requested by opponent:", data);
+
+    if (!this.gameOver) {
+      console.warn("Received rematch request but game is not over");
+      return;
+    }
+
+    // Show rematch request notification
+    this.showRematchRequestOverlay(data);
   }
 
   handleRematchConfirmed(data) {
-    console.log("Rematch confirmed:", data);
+    console.log("✅ Rematch confirmed by both players:", data);
+
+    // Show confirmation message
+    this.showMessage("Rematch accepted! Starting new game...", 3000);
+
+    // Clear current overlay
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
+
     // Reset game state for rematch
-    this.resetGameState();
+    this.resetGameStateForRematch();
+
+    // The server will send a new game-started event
   }
 
   handleRematchDeclined(data) {
-    console.log("Rematch declined:", data);
-    // Handle rematch decline
+    console.log("❌ Rematch declined:", data);
+
+    // Show decline message
+    this.showMessage("Opponent declined rematch. Returning to menu...", 3000);
+
+    // Update rematch button to show declined state
+    this.updateRematchButtonState("REMATCH DECLINED", 0xff4444, false);
+
+    // Automatically leave room after a delay
+    this.time.delayedCall(3000, () => {
+      this.leaveRoom();
+    });
+  }
+
+  showRematchRequestOverlay(data) {
+    // Clear any existing overlay
+    if (this.overlayGroup) {
+      this.overlayGroup.clear(true, true);
+      this.overlayGroup = null;
+    }
+
+    this.overlayGroup = this.add.group();
+
+    // Semi-transparent background
+    const overlay = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH,
+        GAME_CONFIG.CANVAS_HEIGHT,
+        0x000000,
+        0.8
+      )
+      .setDepth(9999);
+    this.overlayGroup.add(overlay);
+
+    // Title
+    const titleText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 100,
+        "REMATCH REQUEST",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "36px",
+          fill: "#fde047",
+          stroke: "#000000",
+          strokeThickness: 4,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(titleText);
+
+    // Message
+    const messageText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 - 40,
+        `Opponent wants a rematch!\nDo you accept?`,
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(messageText);
+
+    // Accept button
+    const acceptButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2 - 150,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 60,
+        250,
+        70,
+        0x22c55e,
+        1
+      )
+      .setStrokeStyle(4, 0x16a34a)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(acceptButton);
+
+    const acceptText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2 - 150,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 60,
+        "ACCEPT",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(acceptText);
+
+    // Decline button
+    const declineButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2 + 150,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 60,
+        250,
+        70,
+        0xdc2626,
+        1
+      )
+      .setStrokeStyle(4, 0x991b1b)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(declineButton);
+
+    const declineText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2 + 150,
+        GAME_CONFIG.CANVAS_HEIGHT / 2 + 60,
+        "DECLINE",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(declineText);
+
+    // Button interactions
+    acceptButton.on("pointerdown", () => {
+      console.log("Player accepted rematch");
+      this.socketService.requestRematch(); // Accept by requesting rematch too
+      this.showMessage("Rematch accepted! Waiting for game to start...", 3000);
+    });
+
+    declineButton.on("pointerdown", () => {
+      console.log("Player declined rematch");
+      this.socketService.declineRematch();
+      this.showMessage("Rematch declined. Returning to menu...", 3000);
+
+      this.time.delayedCall(2000, () => {
+        this.leaveRoom();
+      });
+    });
+  }
+
+  resetGameStateForRematch() {
+    console.log("🔄 Resetting game state for rematch");
+
+    // Reset game flags
+    this.gameStarted = false;
+    this.gameOver = false;
+    this.isPaused = false;
+    this.pausedForGoal = false;
+
+    // Reset scores and timer
+    this.player1Score = 0;
+    this.player2Score = 0;
+    this.gameTime = GAME_CONFIG.GAME_DURATION;
+
+    // Reset ready states
+    this.isPlayerReady = false;
+    this.isOpponentReady = false;
+
+    // Clean up powerups
+    this.powerups.forEach((powerup) => {
+      if (powerup.lifetimeTimer) powerup.lifetimeTimer.destroy();
+      if (powerup.sprite && powerup.sprite.active) powerup.sprite.destroy();
+      if (powerup.icon && powerup.icon.active) powerup.icon.destroy();
+    });
+    this.powerups = [];
+
+    // Resume physics
+    if (this.physics && this.physics.world) {
+      this.physics.world.resume();
+    }
+
+    // Reset player positions
+    this.resetPlayerPositions();
+
+    // Reset ball position
+    if (this.ball) {
+      this.ball.x = GAME_CONFIG.BALL.STARTING_POSITION.x;
+      this.ball.y = GAME_CONFIG.BALL.STARTING_POSITION.y;
+      this.ball.body.setVelocity(0, 0);
+    }
+
+    // Update UI
+    this.updateScoreDisplay();
+    this.updateTimerDisplay();
+
+    console.log("✅ Game state reset for rematch complete");
   }
 
   // Connection status UI helpers
@@ -3339,9 +4549,16 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   handleGameEnded(data) {
-    console.log("Game ended from backend:", data);
+    console.log("🏁 Game ended from backend:", data);
+
+    // Prevent duplicate game end handling
+    if (this.gameOver) {
+      console.log("Game already marked as over, skipping duplicate end");
+      return;
+    }
 
     this.gameOver = true;
+    this.gameStarted = false; // Stop game actions
 
     // Update final scores
     if (data.finalScore) {
@@ -3350,21 +4567,26 @@ export class OnlineGameScene extends Phaser.Scene {
       this.updateScoreDisplay();
     }
 
-    // Stop timer
+    // Stop timer and cleanup
     if (this.timerEvent) {
       this.timerEvent.destroy();
       this.timerEvent = null;
     }
 
-    // Show game end overlay with results
+    // Pause physics
+    this.physics.world.pause();
+
+    // Show game end overlay with rematch options
     this.showGameEndScreen(data);
 
     console.log(
-      `Game ended: ${data.reason}, Winner: ${data.winner}, Duration: ${data.duration}s`
+      `✅ Game ended: ${data.reason}, Winner: ${data.winner}, Duration: ${data.duration}s`
     );
   }
 
   showGameEndScreen(gameEndData) {
+    console.log("🎮 Showing game end screen with rematch options");
+
     // Clear any existing overlays
     if (this.overlayGroup) {
       this.overlayGroup.clear(true, true);
@@ -3499,6 +4721,81 @@ export class OnlineGameScene extends Phaser.Scene {
       .setDepth(10000);
     this.overlayGroup.add(durationText);
 
+    // **REMATCH BUTTONS** - Add them here
+    const buttonWidth = 300;
+    const buttonHeight = 70;
+    const buttonSpacing = 90;
+    const startY = GAME_CONFIG.CANVAS_HEIGHT / 2 + 140;
+
+    // Rematch button
+    const rematchButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY,
+        buttonWidth,
+        buttonHeight,
+        0x22c55e,
+        1
+      )
+      .setStrokeStyle(4, 0x16a34a)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(rematchButton);
+
+    const rematchText = this.add
+      .text(GAME_CONFIG.CANVAS_WIDTH / 2, startY, "REQUEST REMATCH", {
+        fontFamily: '"Press Start 2P"',
+        fontSize: "20px",
+        fill: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 3,
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(rematchText);
+
+    // Leave room button
+    const leaveButton = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY + buttonSpacing,
+        buttonWidth,
+        buttonHeight,
+        0xdc2626,
+        1
+      )
+      .setStrokeStyle(4, 0x991b1b)
+      .setDepth(10001)
+      .setInteractive({ useHandCursor: true });
+    this.overlayGroup.add(leaveButton);
+
+    const leaveText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        startY + buttonSpacing,
+        "LEAVE ROOM",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#ffffff",
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10002);
+    this.overlayGroup.add(leaveText);
+
+    // Button interactions
+    this.setupGameEndButtonInteractions(
+      rematchButton,
+      rematchText,
+      leaveButton,
+      leaveText
+    );
+
     // Add pulsing effect to winner text
     this.tweens.add({
       targets: winner,
@@ -3509,6 +4806,8 @@ export class OnlineGameScene extends Phaser.Scene {
       repeat: -1,
       ease: "Power2",
     });
+
+    console.log("✅ Game end screen with rematch buttons created successfully");
   }
 
   handleRoomJoinedEvent(data) {
@@ -3593,5 +4892,72 @@ export class OnlineGameScene extends Phaser.Scene {
       hasPlayer1: !!this.player1,
       hasPlayer2: !!this.player2,
     });
+  }
+
+  // Check ball bounds and reset if needed
+  checkBallBounds() {
+    if (
+      this.ball.y > GAME_CONFIG.CANVAS_HEIGHT + 50 ||
+      this.ball.x < -50 ||
+      this.ball.x > GAME_CONFIG.CANVAS_WIDTH + 50
+    ) {
+      this.resetBall();
+    }
+  }
+
+  resetBall() {
+    this.ball.setPosition(
+      GAME_CONFIG.BALL.STARTING_POSITION.x,
+      GAME_CONFIG.BALL.STARTING_POSITION.y
+    );
+    this.ball.body.setVelocity(0, 0);
+  }
+
+  // Helper method to show temporary messages to the user
+  showMessage(message, duration = 3000) {
+    // Create message text at top of screen
+    const messageText = this.add
+      .text(GAME_CONFIG.CANVAS_WIDTH / 2, 150, message, {
+        fontFamily: '"Press Start 2P"',
+        fontSize: "20px",
+        fill: "#ffffff",
+        backgroundColor: "#000000",
+        padding: { x: 20, y: 10 },
+        stroke: "#000000",
+        strokeThickness: 3,
+        align: "center",
+      })
+      .setOrigin(0.5)
+      .setDepth(15000); // Very high depth to appear above everything
+
+    // Animate message appearance
+    messageText.setAlpha(0);
+    this.tweens.add({
+      targets: messageText,
+      alpha: 1,
+      duration: 300,
+      ease: "Power2",
+    });
+
+    // Auto-remove after duration
+    this.time.delayedCall(duration, () => {
+      this.tweens.add({
+        targets: messageText,
+        alpha: 0,
+        duration: 500,
+        ease: "Power2",
+        onComplete: () => {
+          messageText.destroy();
+        },
+      });
+    });
+
+    console.log(`📢 Message shown: "${message}"`);
+  }
+
+  // Helper method to update room UI (placeholder)
+  updateRoomUI() {
+    // Update any room-related UI elements
+    console.log("Room UI updated");
   }
 }

@@ -172,9 +172,41 @@ class SocketService {
         this.emit("match-ended", data);
       });
 
+      this.socket.on("game-ended", (data) => {
+        console.log("Game ended:", data);
+        this.emit("game-ended", data);
+      });
+
       this.socket.on("goal-scored", (data) => {
         console.log("Goal scored:", data);
         this.emit("goal-scored", data);
+      });
+
+      // Timer synchronization events
+      this.socket.on("timer-update", (data) => {
+        console.log("Timer update received:", data);
+        this.emit("timer-update", data);
+      });
+
+      this.socket.on("game-time", (data) => {
+        console.log("Game time update received:", data);
+        this.emit("game-time", data);
+      });
+
+      this.socket.on("timer-warning", (data) => {
+        console.log("Timer warning received:", data);
+        this.emit("timer-warning", data);
+      });
+
+      this.socket.on("time-up", (data) => {
+        console.log("Time up received:", data);
+        this.emit("time-up", data);
+      });
+
+      // Game state events
+      this.socket.on("game-state", (data) => {
+        console.log("Game state received:", data);
+        this.emit("game-state", data);
       });
 
       // Input events
@@ -230,6 +262,12 @@ class SocketService {
       this.socket.on("rematch-declined", (data) => {
         console.log("Rematch declined:", data);
         this.emit("rematch-declined", data);
+      });
+
+      // Player disconnection events
+      this.socket.on("player-disconnected", (data) => {
+        console.log("Player disconnected:", data);
+        this.emit("player-disconnected", data);
       });
 
       // Error events
@@ -674,23 +712,19 @@ class SocketService {
   // Rematch methods matching demo
   requestRematch(): void {
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting request-rematch");
+      console.log("🔄 Requesting rematch");
       this.socket.emit("request-rematch");
     } else {
-      console.error(
-        "Socket not connected or not in room, cannot emit request-rematch"
-      );
+      console.error("Cannot request rematch: Socket not connected");
     }
   }
 
   declineRematch(): void {
     if (this.socket && this.isConnected && this.roomJoined) {
-      console.log("Emitting decline-rematch");
+      console.log("❌ Declining rematch");
       this.socket.emit("decline-rematch");
     } else {
-      console.error(
-        "Socket not connected or not in room, cannot emit decline-rematch"
-      );
+      console.error("Cannot decline rematch: Socket not connected");
     }
   }
 
