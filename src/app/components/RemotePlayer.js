@@ -213,13 +213,17 @@ export class RemotePlayer {
   handlePositionUpdate(positionData) {
     if (!this.isOnlinePlayer || !positionData) return;
 
-    console.log("🔄 RemotePlayer receiving position update:", {
-      x: positionData.x,
-      y: positionData.y,
-      velocityX: positionData.velocityX,
-      velocityY: positionData.velocityY,
-      direction: positionData.direction,
-    });
+    // Only log position updates occasionally to reduce console spam
+    const logPosition = Math.random() < 0.01; // Log 1% of position updates
+    if (logPosition) {
+      console.log("🔄 RemotePlayer receiving position update:", {
+        x: positionData.x,
+        y: positionData.y,
+        velocityX: positionData.velocityX,
+        velocityY: positionData.velocityY,
+        direction: positionData.direction,
+      });
+    }
 
     // Calculate time since last update to determine if we need immediate correction
     const now = Date.now();
@@ -337,8 +341,22 @@ export class RemotePlayer {
   }
 
   destroy() {
-    if (this.sprite) {
-      this.sprite.destroy();
+    try {
+      console.log(`Destroying remote player ${this.playerKey}`);
+
+      // Clean up sprite and physics body
+      if (this.sprite && this.sprite.active) {
+        this.sprite.destroy();
+        this.sprite = null;
+      }
+
+      // Clear references
+      this.scene = null;
+      this.socketService = null;
+
+      console.log(`Remote player ${this.playerKey} destroyed successfully`);
+    } catch (error) {
+      console.error(`Error destroying remote player ${this.playerKey}:`, error);
     }
   }
 

@@ -624,57 +624,109 @@ export class OnlineGameScene extends Phaser.Scene {
       GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2
     );
 
+    // Validate scene is ready for player creation
+    if (!this.physics || !this.physics.add) {
+      console.error("Physics system not ready for player creation:", {
+        hasPhysics: !!this.physics,
+        hasAdd: !!(this.physics && this.physics.add),
+        sceneActive: this.scene ? this.scene.isActive() : false,
+      });
+      throw new Error("Cannot create players - physics system not ready");
+    }
+
+    // Validate required scene objects exist
+    if (!this.ground || !this.leftWall || !this.rightWall || !this.topWall) {
+      console.error("Scene boundaries not ready for player creation:", {
+        hasGround: !!this.ground,
+        hasLeftWall: !!this.leftWall,
+        hasRightWall: !!this.rightWall,
+        hasTopWall: !!this.topWall,
+      });
+      throw new Error("Cannot create players - scene boundaries not ready");
+    }
+
     // FIXED: Player 1 (left side) always uses WASD, Player 2 (right side) always uses arrows
     // regardless of which player this client represents
 
-    if (this.playerPosition === "player1") {
-      // This client is player1 (left side of field)
-      console.log(
-        "Creating LOCAL player1 on LEFT side (WASD), REMOTE player2 on RIGHT side (arrows)"
+    try {
+      if (this.playerPosition === "player1") {
+        // This client is player1 (left side of field)
+        console.log(
+          "Creating LOCAL player1 on LEFT side (WASD), REMOTE player2 on RIGHT side (arrows)"
+        );
+
+        // Local player: left side, WASD controls, player1 sprite
+        this.player1 = new Player(
+          this,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x, // 300 (left)
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+          "PLAYER1",
+          "wasd", // Player 1 always uses WASD
+          "player1"
+        );
+
+        // Remote player: right side, player2 sprite
+        this.player2 = new RemotePlayer(
+          this,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x, // 1200 (right)
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
+          "PLAYER2",
+          "player2"
+        );
+      } else {
+        // This client is player2 (right side of field)
+        console.log(
+          "Creating LOCAL player2 on RIGHT side (arrows), REMOTE player1 on LEFT side (WASD)"
+        );
+
+        // Local player: right side, arrow controls, player2 sprite
+        this.player1 = new Player(
+          this,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x, // 1200 (right)
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
+          "PLAYER2", // This local player represents PLAYER2
+          "arrows", // Player 2 always uses arrows
+          "player2"
+        );
+
+        // Remote player: left side, player1 sprite
+        this.player2 = new RemotePlayer(
+          this,
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x, // 300 (left)
+          GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+          "PLAYER1", // Remote player represents PLAYER1
+          "player1"
+        );
+      }
+    } catch (error) {
+      console.error("Failed to create players:", error);
+
+      // Show error message to user
+      this.showMessage(
+        "Failed to initialize players. Please refresh and try again.",
+        5000
       );
 
-      // Local player: left side, WASD controls, player1 sprite
-      this.player1 = new Player(
-        this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x, // 300 (left)
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
-        "PLAYER1",
-        "wasd", // Player 1 always uses WASD
-        "player1"
-      );
+      // Clean up any partially created objects
+      if (this.player1) {
+        try {
+          this.player1.destroy();
+        } catch (e) {
+          console.error("Error destroying player1:", e);
+        }
+        this.player1 = null;
+      }
+      if (this.player2) {
+        try {
+          this.player2.destroy();
+        } catch (e) {
+          console.error("Error destroying player2:", e);
+        }
+        this.player2 = null;
+      }
 
-      // Remote player: right side, player2 sprite
-      this.player2 = new RemotePlayer(
-        this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x, // 1200 (right)
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
-        "PLAYER2",
-        "player2"
-      );
-    } else {
-      // This client is player2 (right side of field)
-      console.log(
-        "Creating LOCAL player2 on RIGHT side (arrows), REMOTE player1 on LEFT side (WASD)"
-      );
-
-      // Local player: right side, arrow controls, player2 sprite
-      this.player1 = new Player(
-        this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x, // 1200 (right)
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
-        "PLAYER2", // This local player represents PLAYER2
-        "arrows", // Player 2 always uses arrows
-        "player2"
-      );
-
-      // Remote player: left side, player1 sprite
-      this.player2 = new RemotePlayer(
-        this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x, // 300 (left)
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
-        "PLAYER1", // Remote player represents PLAYER1
-        "player1"
-      );
+      // Re-throw error to prevent game from continuing in broken state
+      throw new Error(`Player creation failed: ${error.message}`);
     }
 
     // Set online player properties for local player (player1)
@@ -3520,14 +3572,18 @@ export class OnlineGameScene extends Phaser.Scene {
         },
       };
 
-      console.log("📡 SENDING player position:", {
-        position: positionData.position,
-        x: positionData.player.x,
-        y: positionData.player.y,
-        dx: dx,
-        dy: dy,
-        timeSinceLastSend: timeSinceLastSend,
-      });
+      // Only log position sends occasionally to reduce console spam
+      const logPosition = Math.random() < 0.01; // Log 1% of position sends
+      if (logPosition) {
+        console.log("📡 SENDING player position:", {
+          position: positionData.position,
+          x: positionData.player.x,
+          y: positionData.player.y,
+          dx: dx,
+          dy: dy,
+          timeSinceLastSend: timeSinceLastSend,
+        });
+      }
 
       // Use socketService method directly
       this.socketService.sendPlayerPosition(positionData);
@@ -3564,13 +3620,17 @@ export class OnlineGameScene extends Phaser.Scene {
         },
       };
 
-      console.log("🏀 SENDING ball state:", {
-        x: ballData.ball.x,
-        y: ballData.ball.y,
-        velX: ballData.ball.velocityX,
-        velY: ballData.ball.velocityY,
-        authority: this.isBallAuthority,
-      });
+      // Only log ball state sends occasionally to reduce console spam
+      const logBall = Math.random() < 0.01; // Log 1% of ball state sends
+      if (logBall) {
+        console.log("🏀 SENDING ball state:", {
+          x: ballData.ball.x,
+          y: ballData.ball.y,
+          velX: ballData.ball.velocityX,
+          velY: ballData.ball.velocityY,
+          authority: this.isBallAuthority,
+        });
+      }
 
       this.socketService.sendBallState(ballData);
       this.lastBallStateSend = now;
@@ -4955,7 +5015,66 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Update UI
     this.updateRoomUI();
-    this.showMessage(`Joined room: ${this.roomCode}`, 3000);
+
+    // Show room joined message with better safety checks and delay
+    const roomCode = this.roomCode || data.roomCode || "Unknown";
+
+    // Check if scene is ready for UI messages
+    const sceneReady = !!(this && this.add && this.tweens && this.time);
+    const sceneActive = !!(
+      this.scene &&
+      this.scene.isActive &&
+      this.scene.isActive()
+    );
+
+    console.log("🏠 Scene state for message:", {
+      sceneReady,
+      sceneActive,
+      hasAdd: !!this.add,
+      hasTweens: !!this.tweens,
+      hasTime: !!this.time,
+    });
+
+    // Use defensive wrapper for showing messages to prevent race conditions
+    const safeShowMessage = (message, delay = 0) => {
+      const showWithDelay = () => {
+        // Multiple redundant checks to prevent race conditions
+        if (!this || !this.showMessage) {
+          console.log(`📢 ${message} (this.showMessage not available)`);
+          return;
+        }
+
+        if (!this.add || !this.tweens || !this.time) {
+          console.log(`📢 ${message} (scene not ready for UI)`);
+          return;
+        }
+
+        try {
+          this.showMessage(message, 3000);
+        } catch (error) {
+          console.warn(`Failed to show message "${message}":`, error);
+          console.log(`📢 ${message} (console fallback)`);
+        }
+      };
+
+      if (delay > 0) {
+        setTimeout(showWithDelay, delay);
+      } else {
+        showWithDelay();
+      }
+    };
+
+    // Always log to console immediately
+    console.log(`📢 Joined room: ${roomCode}`);
+
+    if (sceneReady && (sceneActive || !this.scene)) {
+      // Scene appears ready, try to show message
+      safeShowMessage(`Joined room: ${roomCode}`);
+    } else {
+      // Scene not ready, try again with delay
+      console.log("Scene not ready for UI message, scheduling retry");
+      safeShowMessage(`Joined room: ${roomCode}`, 1000);
+    }
   }
 
   /**
@@ -4970,33 +5089,133 @@ export class OnlineGameScene extends Phaser.Scene {
       this.playerPosition
     );
 
-    // Clean up existing players
-    if (this.player1) {
-      this.player1.destroy();
-      this.player1 = null;
+    try {
+      // Validate that the scene is ready for player creation
+      if (!this.physics || !this.physics.add) {
+        console.warn("Physics system not ready, delaying player rebuild");
+
+        // Check if we should retry or give up
+        if (!this._rebuildRetryCount) {
+          this._rebuildRetryCount = 0;
+        }
+        this._rebuildRetryCount++;
+
+        if (this._rebuildRetryCount > 10) {
+          console.error(
+            "Max rebuild retries reached, giving up player rebuild"
+          );
+          // Show error message to user if scene is ready
+          try {
+            if (this.add && this.showMessage) {
+              this.showMessage(
+                "Failed to initialize players. Please refresh and try again.",
+                5000
+              );
+            } else {
+              console.log(
+                "📢 Failed to initialize players. Please refresh and try again. (scene not ready)"
+              );
+            }
+          } catch (error) {
+            console.warn("Failed to show rebuild error message:", error);
+            console.log(
+              "📢 Failed to initialize players. Please refresh and try again. (console fallback)"
+            );
+          }
+          return;
+        }
+
+        // Retry after a short delay
+        this.time.delayedCall(100, () => {
+          this._rebuildPlayersForAuthoritativePosition();
+        });
+        return;
+      }
+
+      // Reset retry count on successful validation
+      this._rebuildRetryCount = 0;
+
+      // Clean up existing players safely
+      if (this.player1) {
+        try {
+          this.player1.destroy();
+        } catch (e) {
+          console.error("Error destroying player1 during rebuild:", e);
+        }
+        this.player1 = null;
+      }
+      if (this.player2) {
+        try {
+          this.player2.destroy();
+        } catch (e) {
+          console.error("Error destroying player2 during rebuild:", e);
+        }
+        this.player2 = null;
+      }
+
+      // Update ball authority based on position
+      this.isBallAuthority = this.playerPosition === "player1";
+
+      // Store in global variables for consistency
+      if (typeof window !== "undefined") {
+        window.__HEADBALL_IS_BALL_AUTHORITY = this.isBallAuthority;
+      }
+
+      // Recreate players with correct assignments
+      this.createPlayers();
+
+      console.log("✅ Players rebuilt successfully:", {
+        playerPosition: this.playerPosition,
+        isBallAuthority: this.isBallAuthority,
+        hasPlayer1: !!this.player1,
+        hasPlayer2: !!this.player2,
+      });
+    } catch (error) {
+      console.error(
+        "Failed to rebuild players for authoritative position:",
+        error
+      );
+
+      // Show error message to user if scene is ready
+      try {
+        if (this.add && this.showMessage) {
+          this.showMessage(
+            "Failed to rebuild players. Please try refreshing.",
+            5000
+          );
+        } else {
+          console.log(
+            "📢 Failed to rebuild players. Please try refreshing. (scene not ready)"
+          );
+        }
+      } catch (error) {
+        console.warn("Failed to show rebuild error message:", error);
+        console.log(
+          "📢 Failed to rebuild players. Please try refreshing. (console fallback)"
+        );
+      }
+
+      // Clean up any partially created objects
+      if (this.player1) {
+        try {
+          this.player1.destroy();
+        } catch (e) {
+          console.error("Error destroying player1 after rebuild failure:", e);
+        }
+        this.player1 = null;
+      }
+      if (this.player2) {
+        try {
+          this.player2.destroy();
+        } catch (e) {
+          console.error("Error destroying player2 after rebuild failure:", e);
+        }
+        this.player2 = null;
+      }
+
+      // Don't re-throw here to prevent complete game crash
+      console.error("Player rebuild failed, game may be in unstable state");
     }
-    if (this.player2) {
-      this.player2.destroy();
-      this.player2 = null;
-    }
-
-    // Update ball authority based on position
-    this.isBallAuthority = this.playerPosition === "player1";
-
-    // Store in global variables for consistency
-    if (typeof window !== "undefined") {
-      window.__HEADBALL_IS_BALL_AUTHORITY = this.isBallAuthority;
-    }
-
-    // Recreate players with correct assignments
-    this.createPlayers();
-
-    console.log("✅ Players rebuilt successfully:", {
-      playerPosition: this.playerPosition,
-      isBallAuthority: this.isBallAuthority,
-      hasPlayer1: !!this.player1,
-      hasPlayer2: !!this.player2,
-    });
   }
 
   // Check ball bounds and reset if needed
@@ -5126,44 +5345,106 @@ export class OnlineGameScene extends Phaser.Scene {
 
   // Helper method to show temporary messages to the user
   showMessage(message, duration = 3000) {
-    // Create message text at top of screen
-    const messageText = this.add
-      .text(GAME_CONFIG.CANVAS_WIDTH / 2, 150, message, {
-        fontFamily: '"Press Start 2P"',
-        fontSize: "20px",
-        fill: "#ffffff",
-        backgroundColor: "#000000",
-        padding: { x: 20, y: 10 },
-        stroke: "#000000",
-        strokeThickness: 3,
-        align: "center",
-      })
-      .setOrigin(0.5)
-      .setDepth(15000); // Very high depth to appear above everything
+    // Safety check: ensure scene is properly initialized
+    if (!this || !this.add || !this.tweens || !this.time) {
+      console.warn(
+        `Cannot show message "${message}" - scene not fully initialized`,
+        {
+          hasThis: !!this,
+          hasAdd: !!(this && this.add),
+          hasTweens: !!(this && this.tweens),
+          hasTime: !!(this && this.time),
+          sceneActive: !!(
+            this &&
+            this.scene &&
+            this.scene.isActive &&
+            this.scene.isActive()
+          ),
+        }
+      );
+      console.log(`📢 Message (console only): "${message}"`);
+      return;
+    }
 
-    // Animate message appearance
-    messageText.setAlpha(0);
-    this.tweens.add({
-      targets: messageText,
-      alpha: 1,
-      duration: 300,
-      ease: "Power2",
-    });
+    // Double-check scene state
+    if (this.scene && this.scene.isActive && !this.scene.isActive()) {
+      console.warn(`Cannot show message "${message}" - scene is not active`);
+      console.log(`📢 Message (console only): "${message}"`);
+      return;
+    }
 
-    // Auto-remove after duration
-    this.time.delayedCall(duration, () => {
-      this.tweens.add({
-        targets: messageText,
-        alpha: 0,
-        duration: 500,
-        ease: "Power2",
-        onComplete: () => {
-          messageText.destroy();
-        },
-      });
-    });
+    try {
+      // Triple check right before creating the text object
+      if (!this.add) {
+        console.warn(
+          `this.add became null right before text creation for message: "${message}"`
+        );
+        console.log(`📢 Message (console only): "${message}"`);
+        return;
+      }
 
-    console.log(`📢 Message shown: "${message}"`);
+      // Create message text at top of screen
+      const messageText = this.add
+        .text(GAME_CONFIG.CANVAS_WIDTH / 2, 150, message, {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "20px",
+          fill: "#ffffff",
+          backgroundColor: "#000000",
+          padding: { x: 20, y: 10 },
+          stroke: "#000000",
+          strokeThickness: 3,
+          align: "center",
+        })
+        .setOrigin(0.5)
+        .setDepth(15000); // Very high depth to appear above everything
+
+      // Animate message appearance
+      messageText.setAlpha(0);
+
+      // Check tweens still exists before using it
+      if (this.tweens) {
+        this.tweens.add({
+          targets: messageText,
+          alpha: 1,
+          duration: 300,
+          ease: "Power2",
+        });
+
+        // Auto-remove after duration
+        if (this.time) {
+          this.time.delayedCall(duration, () => {
+            if (this.tweens && messageText && messageText.active) {
+              this.tweens.add({
+                targets: messageText,
+                alpha: 0,
+                duration: 500,
+                ease: "Power2",
+                onComplete: () => {
+                  if (messageText && messageText.active) {
+                    messageText.destroy();
+                  }
+                },
+              });
+            } else if (messageText && messageText.active) {
+              // Fallback: destroy directly if tweens unavailable
+              messageText.destroy();
+            }
+          });
+        } else {
+          // Fallback: remove after duration without animation
+          setTimeout(() => {
+            if (messageText && messageText.active) {
+              messageText.destroy();
+            }
+          }, duration);
+        }
+      }
+
+      console.log(`📢 Message shown: "${message}"`);
+    } catch (error) {
+      console.error(`Error showing message "${message}":`, error);
+      console.log(`📢 Message (console only): "${message}"`);
+    }
   }
 
   // Helper method to update room UI (placeholder)

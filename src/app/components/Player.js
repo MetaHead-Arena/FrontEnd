@@ -6,6 +6,21 @@ export class Player {
     this.playerKey = playerKey;
     this.controls = controls;
 
+    // Validate scene and physics system
+    if (!scene) {
+      throw new Error("Scene is required for Player constructor");
+    }
+
+    if (!scene.physics || !scene.physics.add) {
+      console.error("Physics system not ready for Player creation:", {
+        hasScene: !!scene,
+        hasPhysics: !!scene.physics,
+        hasAdd: !!(scene.physics && scene.physics.add),
+        sceneKey: scene.scene ? scene.scene.key : "unknown",
+      });
+      throw new Error("Physics system not initialized - cannot create Player");
+    }
+
     // Load player attributes
     this.attributes = GAME_CONFIG.PLAYER.ATTRIBUTES[playerKey] || {
       ...GAME_CONFIG.PLAYER.DEFAULT_ATTRIBUTES,
@@ -84,13 +99,30 @@ export class Player {
   }
 
   setupCollisions() {
-    this.scene.physics.add.collider(this.sprite, this.scene.ground, () => {
-      this.isOnGround = true;
-    });
+    // Validate physics system and scene objects before setting up collisions
+    if (!this.scene.physics || !this.scene.physics.add) {
+      console.warn("Physics system not available for collision setup");
+      return;
+    }
 
-    this.scene.physics.add.collider(this.sprite, this.scene.leftWall);
-    this.scene.physics.add.collider(this.sprite, this.scene.rightWall);
-    this.scene.physics.add.collider(this.sprite, this.scene.topWall);
+    // Check if scene objects exist before adding colliders
+    if (this.scene.ground) {
+      this.scene.physics.add.collider(this.sprite, this.scene.ground, () => {
+        this.isOnGround = true;
+      });
+    }
+
+    if (this.scene.leftWall) {
+      this.scene.physics.add.collider(this.sprite, this.scene.leftWall);
+    }
+
+    if (this.scene.rightWall) {
+      this.scene.physics.add.collider(this.sprite, this.scene.rightWall);
+    }
+
+    if (this.scene.topWall) {
+      this.scene.physics.add.collider(this.sprite, this.scene.topWall);
+    }
   }
 
   update() {
@@ -202,7 +234,15 @@ export class Player {
         isOnGround: this.isOnGround,
       };
 
-      console.log(`Sending position for ${this.playerPosition}:`, playerData);
+      // Only log position sends occasionally to reduce console spam
+      const logPosition = Math.random() < 0.01; // Log 1% of position sends
+      if (logPosition) {
+        console.log(
+          `📡 Sending position for ${this.playerPosition}:`,
+          playerData
+        );
+      }
+
       this.socketService.sendPlayerPosition({
         position: this.playerPosition,
         player: playerData,
@@ -361,11 +401,44 @@ export class Player {
   }
 
   destroy() {
-    if (this.powerupIndicator) {
-      this.powerupIndicator.destroy();
-    }
-    if (this.sprite) {
-      this.sprite.destroy();
+    try {
+      console.log(`Destroying player ${this.playerKey}`);
+
+      // Clean up powerup indicator
+      if (this.powerupIndicator) {
+        this.powerupIndicator.destroy();
+        this.powerupIndicator = null;
+      }
+
+      // Clean up powerup timers
+      if (this.powerupTimers) {
+        Object.keys(this.powerupTimers).forEach((type) => {
+          if (this.scene && this.scene.time) {
+            // Clear any scene timers related to this player
+            // Note: Phaser timers are automatically cleaned up when the scene is destroyed
+          }
+        });
+        this.powerupTimers = {};
+      }
+
+      // Clear active powerups
+      if (this.activePowerups) {
+        this.activePowerups = {};
+      }
+
+      // Clean up sprite and physics body
+      if (this.sprite && this.sprite.active) {
+        this.sprite.destroy();
+        this.sprite = null;
+      }
+
+      // Clear references
+      this.scene = null;
+      this.socketService = null;
+
+      console.log(`Player ${this.playerKey} destroyed successfully`);
+    } catch (error) {
+      console.error(`Error destroying player ${this.playerKey}:`, error);
     }
   }
 }
