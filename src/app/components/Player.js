@@ -131,66 +131,49 @@ export class Player {
       return;
     }
 
-    if (this.controls === "arrows") {
-      this.handleArrowControls();
-    } else if (this.controls === "wasd") {
-      this.handleWASDControls();
-    }
+    // Allow both WASD and arrow keys for all players
+    this.handleCombinedControls();
   }
 
-  handleArrowControls() {
+  handleCombinedControls() {
     const cursors = this.scene.cursors;
+    const wasd = this.scene.wasd;
+    const space = this.scene.space;
     const rightShift = this.scene.rightShift;
 
     const currentSpeed = this.getCurrentSpeed();
-    if (cursors.left.isDown) {
+
+    // Check both WASD and arrow keys for movement
+    const leftPressed =
+      (wasd && wasd.A.isDown) || (cursors && cursors.left.isDown);
+    const rightPressed =
+      (wasd && wasd.D.isDown) || (cursors && cursors.right.isDown);
+    const upPressed = (wasd && wasd.W.isDown) || (cursors && cursors.up.isDown);
+    const kickPressed =
+      (space && space.isDown) || (rightShift && rightShift.isDown);
+
+    if (leftPressed) {
       this.sprite.setVelocityX(-currentSpeed);
+      this.direction = "left";
       this.sendInput("move-left", { pressed: true });
-    } else if (cursors.right.isDown) {
+    } else if (rightPressed) {
       this.sprite.setVelocityX(currentSpeed);
+      this.direction = "right";
       this.sendInput("move-right", { pressed: true });
     } else {
       this.sprite.setVelocityX(0);
+      this.direction = "idle";
       this.sendInput("move-left", { pressed: false });
       this.sendInput("move-right", { pressed: false });
     }
 
-    if (cursors.up.isDown && this.isOnGround) {
+    if (upPressed && this.isOnGround) {
       this.sprite.setVelocityY(this.getCurrentJumpVelocity());
       this.isOnGround = false;
       this.sendInput("jump", { pressed: true });
     }
 
-    if (rightShift && rightShift.isDown && this.canShoot()) {
-      this.shoot();
-      this.sendInput("kick", { pressed: true });
-    }
-  }
-
-  handleWASDControls() {
-    const wasd = this.scene.wasd;
-    const space = this.scene.space;
-
-    const currentSpeed = this.getCurrentSpeed();
-    if (wasd.A.isDown) {
-      this.sprite.setVelocityX(-currentSpeed);
-      this.sendInput("move-left", { pressed: true });
-    } else if (wasd.D.isDown) {
-      this.sprite.setVelocityX(currentSpeed);
-      this.sendInput("move-right", { pressed: true });
-    } else {
-      this.sprite.setVelocityX(0);
-      this.sendInput("move-left", { pressed: false });
-      this.sendInput("move-right", { pressed: false });
-    }
-
-    if (wasd.W.isDown && this.isOnGround) {
-      this.sprite.setVelocityY(this.getCurrentJumpVelocity());
-      this.isOnGround = false;
-      this.sendInput("jump", { pressed: true });
-    }
-
-    if (space && space.isDown && this.canShoot()) {
+    if (kickPressed && this.canShoot()) {
       this.shoot();
       this.sendInput("kick", { pressed: true });
     }

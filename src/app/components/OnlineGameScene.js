@@ -476,6 +476,17 @@ export class OnlineGameScene extends Phaser.Scene {
       });
     });
 
+    // Powerup synchronization events
+    this.socketService.on("powerup-spawned", (data) => {
+      console.log("Powerup spawned by authority:", data);
+      this.handleRemotePowerupSpawn(data);
+    });
+
+    this.socketService.on("powerup-collected", (data) => {
+      console.log("Powerup collected by authority:", data);
+      this.handleRemotePowerupCollection(data);
+    });
+
     // Error handling
     this.socketService.on("error", (data) => {
       console.error("Socket error received:", data);
@@ -613,13 +624,13 @@ export class OnlineGameScene extends Phaser.Scene {
       GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2
     );
 
-    // SIMPLIFIED APPROACH: Always create local player as player1, remote as player2
-    // The actual field position (left/right) is determined by this.playerPosition
+    // FIXED: Player 1 (left side) always uses WASD, Player 2 (right side) always uses arrows
+    // regardless of which player this client represents
 
     if (this.playerPosition === "player1") {
       // This client is player1 (left side of field)
       console.log(
-        "Creating LOCAL player on LEFT side (300px), REMOTE player on RIGHT side (1200px)"
+        "Creating LOCAL player1 on LEFT side (WASD), REMOTE player2 on RIGHT side (arrows)"
       );
 
       // Local player: left side, WASD controls, player1 sprite
@@ -628,7 +639,7 @@ export class OnlineGameScene extends Phaser.Scene {
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x, // 300 (left)
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
         "PLAYER1",
-        "wasd",
+        "wasd", // Player 1 always uses WASD
         "player1"
       );
 
@@ -643,7 +654,7 @@ export class OnlineGameScene extends Phaser.Scene {
     } else {
       // This client is player2 (right side of field)
       console.log(
-        "Creating LOCAL player on RIGHT side (1200px), REMOTE player on LEFT side (300px)"
+        "Creating LOCAL player2 on RIGHT side (arrows), REMOTE player1 on LEFT side (WASD)"
       );
 
       // Local player: right side, arrow controls, player2 sprite
@@ -651,8 +662,8 @@ export class OnlineGameScene extends Phaser.Scene {
         this,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x, // 1200 (right)
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
-        "PLAYER1",
-        "arrows",
+        "PLAYER2", // This local player represents PLAYER2
+        "arrows", // Player 2 always uses arrows
         "player2"
       );
 
@@ -661,7 +672,7 @@ export class OnlineGameScene extends Phaser.Scene {
         this,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x, // 300 (left)
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
-        "PLAYER2",
+        "PLAYER1", // Remote player represents PLAYER1
         "player1"
       );
     }
@@ -1017,9 +1028,21 @@ export class OnlineGameScene extends Phaser.Scene {
       config: powerupConfig,
       collected: false,
       lifetimeTimer: null,
+      id: `powerup_${Date.now()}_${Math.random()}`,
     };
 
     this.powerups.push(powerupData);
+
+    // Broadcast powerup spawn to other players
+    if (this.socketService && this.socketService.isSocketConnected()) {
+      this.socketService.getSocket().emit("powerup-spawned", {
+        id: powerupData.id,
+        x: x,
+        y: y,
+        type: randomType,
+        timestamp: Date.now(),
+      });
+    }
 
     // Collision with ball
     this.physics.add.overlap(this.ball, powerup, () => {
@@ -1037,6 +1060,20 @@ export class OnlineGameScene extends Phaser.Scene {
 
   collectPowerup(powerupData) {
     if (powerupData.collected) return;
+
+    // Broadcast powerup collection to other players
+    if (
+      this.socketService &&
+      this.socketService.isSocketConnected() &&
+      powerupData.id
+    ) {
+      this.socketService.getSocket().emit("powerup-collected", {
+        id: powerupData.id,
+        collectorPosition:
+          this.lastPlayerToTouchBall?.playerPosition || this.playerPosition,
+        timestamp: Date.now(),
+      });
+    }
 
     // Create particle effect at collection point
     this.createParticleEffect(
@@ -2216,8 +2253,10 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   updateTimerDisplay() {
-    const minutes = Math.floor(this.gameTime / 60);
-    const seconds = this.gameTime % 60;
+    // Convert to integer to avoid floating point display
+    const gameTimeInt = Math.floor(this.gameTime);
+    const minutes = Math.floor(gameTimeInt / 60);
+    const seconds = gameTimeInt % 60;
     const timeString = `⏱️ ${minutes.toString().padStart(2, "0")}:${seconds
       .toString()
       .padStart(2, "0")}`;
@@ -3346,11 +3385,10 @@ export class OnlineGameScene extends Phaser.Scene {
     if (!this.player1.sprite || !this.player1.sprite.body) return;
     if (this.gameOver) return;
 
-    // Handle input based on player controls (wasd or arrows)
-    const isWASD = this.player1.controls === "wasd";
-    const leftKey = isWASD ? this.wasd.A : this.cursors.left;
-    const rightKey = isWASD ? this.wasd.D : this.cursors.right;
-    const upKey = isWASD ? this.wasd.W : this.cursors.up;
+    // Allow both WASD and Arrow keys for all players
+    const leftKey = this.wasd.A.isDown || this.cursors.left.isDown;
+    const rightKey = this.wasd.D.isDown || this.cursors.right.isDown;
+    const upKey = this.wasd.W.isDown || this.cursors.up.isDown;
     const kickKey = this.space.isDown || this.enter.isDown || this.shift.isDown;
 
     // Initialize speed
@@ -3360,7 +3398,7 @@ export class OnlineGameScene extends Phaser.Scene {
     // Handle horizontal movement
     let horizontalVelocity = 0;
 
-    if (leftKey.isDown) {
+    if (leftKey) {
       if (!this.leftPressed) {
         this.leftPressed = true;
         this.socketService.sendMoveLeft(true);
@@ -3374,7 +3412,7 @@ export class OnlineGameScene extends Phaser.Scene {
       }
     }
 
-    if (rightKey.isDown) {
+    if (rightKey) {
       if (!this.rightPressed) {
         this.rightPressed = true;
         this.socketService.sendMoveRight(true);
@@ -3399,7 +3437,7 @@ export class OnlineGameScene extends Phaser.Scene {
     }
 
     // Handle jump
-    if (upKey.isDown && this.player1.isOnGround) {
+    if (upKey && this.player1.isOnGround) {
       if (!this.jumpPressed) {
         this.jumpPressed = true;
         this.socketService.sendJump(true);
@@ -4978,6 +5016,112 @@ export class OnlineGameScene extends Phaser.Scene {
       GAME_CONFIG.BALL.STARTING_POSITION.y
     );
     this.ball.body.setVelocity(0, 0);
+  }
+
+  // Handle remote powerup spawn from other players
+  handleRemotePowerupSpawn(data) {
+    console.log("Creating remote powerup:", data);
+    this.createSyncedPowerup(data.x, data.y, data.type, data.id);
+  }
+
+  // Handle remote powerup collection from other players
+  handleRemotePowerupCollection(data) {
+    console.log("Removing collected powerup:", data);
+    const powerup = this.powerups.find((p) => p.id === data.id);
+    if (powerup) {
+      // Apply powerup effect if it was collected by a player
+      if (data.collectorPosition) {
+        const collector =
+          data.collectorPosition === this.playerPosition
+            ? this.player1
+            : this.player2;
+        if (collector && collector.applyPowerup) {
+          collector.applyPowerup(powerup.type);
+          this.showPowerupNotification(powerup.config.name, collector);
+        }
+      }
+
+      this.removePowerup(powerup);
+    }
+  }
+
+  // Create powerup from sync data
+  createSyncedPowerup(x, y, type, id) {
+    if (this.gameOver) return;
+
+    const powerupConfig = GAME_CONFIG.POWERUPS.TYPES[type];
+    if (!powerupConfig) return;
+
+    // Create power-up visual
+    const powerup = this.add.circle(
+      x,
+      y,
+      GAME_CONFIG.POWERUPS.SIZE,
+      powerupConfig.color
+    );
+    powerup.setStrokeStyle(4, 0xffffff);
+    powerup.setDepth(800);
+
+    // Add icon text
+    const icon = this.add.text(x, y, powerupConfig.icon, {
+      fontFamily: '"Press Start 2P"',
+      fontSize: "20px",
+      fill: "#ffffff",
+    });
+    icon.setOrigin(0.5, 0.5);
+    icon.setDepth(801);
+
+    // Add physics
+    this.physics.add.existing(powerup);
+    powerup.body.setCircle(GAME_CONFIG.POWERUPS.SIZE);
+    powerup.body.setImmovable(true);
+    powerup.body.setGravityY(-GAME_CONFIG.GRAVITY);
+    powerup.body.setVelocity(0, 0);
+
+    // Floating animation
+    this.tweens.add({
+      targets: [powerup, icon],
+      y: y - 5,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // Glowing effect
+    this.tweens.add({
+      targets: powerup,
+      alpha: 0.7,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    // Store power-up data
+    const powerupData = {
+      sprite: powerup,
+      icon: icon,
+      type: type,
+      config: powerupConfig,
+      collected: false,
+      lifetimeTimer: null,
+      id: id,
+    };
+
+    this.powerups.push(powerupData);
+
+    // Collision with ball for all players
+    this.physics.add.overlap(this.ball, powerup, () => {
+      this.collectPowerup(powerupData);
+    });
+
+    // Auto-remove after lifetime
+    powerupData.lifetimeTimer = this.time.delayedCall(
+      GAME_CONFIG.POWERUPS.LIFETIME,
+      () => {
+        this.removePowerup(powerupData);
+      }
+    );
   }
 
   // Helper method to show temporary messages to the user

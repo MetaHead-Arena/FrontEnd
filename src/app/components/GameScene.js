@@ -1243,16 +1243,18 @@ export class GameScene extends Phaser.Scene {
       // For online games, assign players based on position
       if (this.playerPosition === "player1") {
         console.log("Creating Player1 (local) and Player2 (remote)");
-        console.log("Player1 will use arrow controls and be on right side");
+        console.log(
+          "Player1 will use both WASD and arrows and be on right side"
+        );
         console.log("Player2 will be remote player on left side");
 
-        // This player is Player 1: Arrow keys, right side, use "player2" image
+        // This player is Player 1: Both controls, right side, use "player2" image
         this.player1 = new Player(
           this,
           GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
           GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
           "PLAYER1",
-          "arrows",
+          "both", // Allow both control schemes
           "player2" // <-- right side image
         );
         // Remote player is Player 2: left side, use "player1" image
@@ -1266,15 +1268,17 @@ export class GameScene extends Phaser.Scene {
       } else {
         console.log("Creating Player1 (remote) and Player2 (local)");
         console.log("Player1 will be remote player on left side");
-        console.log("Player2 will use WASD controls and be on left side");
+        console.log(
+          "Player2 will use both WASD and arrows and be on left side"
+        );
 
-        // This player is Player 2: WASD, left side, use "player1" image
+        // This player is Player 2: Both controls, left side, use "player1" image
         this.player1 = new Player(
           this,
           GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
           GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
           "PLAYER1",
-          "wasd",
+          "both", // Allow both control schemes
           "player1"
         );
         // Remote player is Player 1: right side, use "player2" image
@@ -1294,13 +1298,13 @@ export class GameScene extends Phaser.Scene {
       console.log("Player2 is remote:", this.player2 instanceof RemotePlayer);
       this.validatePlayerObjects();
     } else if (this.gameMode === "vsAI") {
-      // Player 1: WASD, left side, use "player1" image
+      // Player 1: Both controls, left side, use "player1" image
       this.player1 = new Player(
         this,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
         "PLAYER1",
-        "wasd",
+        "both", // Allow both control schemes
         "player1"
       );
       // Player 2: AI, right side, use "ai-head" image
@@ -1313,13 +1317,13 @@ export class GameScene extends Phaser.Scene {
       );
       this.player2.setDifficulty("medium");
     } else {
-      // 2 player local: Player 1 (WASD, left, "player1"), Player 2 (arrows, right, "player2")
+      // 2 player local: Both players can use both WASD and arrows
       this.player1 = new Player(
         this,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
         "PLAYER1",
-        "wasd",
+        "both", // Allow both control schemes
         "player1"
       );
       this.player2 = new Player(
@@ -1327,7 +1331,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
         "PLAYER2",
-        "arrows",
+        "both", // Allow both control schemes
         "player2"
       );
     }
@@ -2165,8 +2169,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   updateTimerDisplay() {
-    const minutes = Math.floor(this.gameTime / 60);
-    const seconds = this.gameTime % 60;
+    // Convert to integer to avoid floating point display
+    const gameTimeInt = Math.floor(this.gameTime);
+    const minutes = Math.floor(gameTimeInt / 60);
+    const seconds = gameTimeInt % 60;
     const timeString = `⏱️ ${minutes.toString().padStart(2, "0")}:${seconds
       .toString()
       .padStart(2, "0")}`;
@@ -2174,7 +2180,7 @@ export class GameScene extends Phaser.Scene {
     // Determine timer color and background based on time left
     let timerColor = "#ffffff";
     let backgroundColor = "#222222";
-    if (this.gameTime <= 10) {
+    if (gameTimeInt <= 10) {
       timerColor = "#ff0000";
       backgroundColor = "#330000";
       // Pulse effect for last 10 seconds
@@ -2186,7 +2192,7 @@ export class GameScene extends Phaser.Scene {
         yoyo: true,
         ease: "Power2",
       });
-    } else if (this.gameTime <= 30) {
+    } else if (gameTimeInt <= 30) {
       timerColor = "#ffaa00";
       backgroundColor = "#332200";
     }
