@@ -62,6 +62,13 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Add new property for assumed position
     this._assumedPosition = null;
+
+    // Initialize rematch state tracking
+    this.rematchState = {
+      player1Requested: false,
+      player2Requested: false,
+      timeoutActive: false,
+    };
   }
 
   init(data) {
@@ -209,6 +216,13 @@ export class OnlineGameScene extends Phaser.Scene {
     this.powerups = [];
     this.powerupSpawnTimer = null;
     this.lastPlayerToTouchBall = null;
+
+    // Initialize rematch state tracking
+    this.rematchState = {
+      player1Requested: false,
+      player2Requested: false,
+      timeoutActive: false,
+    };
 
     // Clear any existing timers
     if (this.timerEvent) {
@@ -406,12 +420,31 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Rematch events
     this.socketService.on("rematch-requested", (data) => {
-      console.log("Rematch requested:", data);
-      this.handleRematchRequest(data);
+      console.log("🔄 Rematch requested by opponent:", data);
+
+      if (!this.gameOver) {
+        console.warn("Received rematch request but game is not over");
+        return;
+      }
+
+      // Update rematch state
+      this.rematchState = data.rematchState || {};
+
+      // Show rematch request notification
+      this.showRematchRequestOverlay(data);
+
+      // Update rematch status display
+      this.updateRematchStatusDisplay();
+
+      // Show notification message
+      this.showMessage(
+        `${data.requesterUsername || "Opponent"} wants a rematch!`,
+        4000
+      );
     });
 
     this.socketService.on("rematch-confirmed", (data) => {
-      console.log("Rematch confirmed by both players:", data);
+      console.log("✅ Rematch confirmed by both players:", data);
 
       // Show confirmation message
       this.showMessage("Rematch accepted! Starting new game...", 3000);
@@ -429,7 +462,7 @@ export class OnlineGameScene extends Phaser.Scene {
     });
 
     this.socketService.on("rematch-declined", (data) => {
-      console.log("Rematch declined:", data);
+      console.log("❌ Rematch declined:", data);
 
       // Show decline message
       this.showMessage("Opponent declined rematch. Returning to menu...", 3000);
@@ -2873,11 +2906,33 @@ export class OnlineGameScene extends Phaser.Scene {
     console.log("🔄 Requesting rematch");
     this.socketService.requestRematch();
 
-    // Update button to show request sent
-    this.updateRematchButtonState("REMATCH SENT...", 0x6b7280, false);
+    // Update local rematch state
+    if (this.playerPosition === "player1") {
+      this.rematchState.player1Requested = true;
+    } else {
+      this.rematchState.player2Requested = true;
+    }
 
-    // Show status message
-    this.showMessage("Rematch request sent! Waiting for opponent...", 5000);
+    // Update the rematch status display
+    this.updateRematchStatusDisplay();
+
+    // Update button to show request sent
+    const rematchButton = this.overlayGroup?.children.entries.find(
+      (child) => child.type === "Rectangle" && child.fillColor === 0x22c55e
+    );
+    if (rematchButton) {
+      rematchButton.setFillStyle(0x6b7280); // Gray out button
+    }
+
+    const rematchText = this.overlayGroup?.children.entries.find(
+      (child) => child.type === "Text" && child.text === "REQUEST REMATCH"
+    );
+    if (rematchText) {
+      rematchText.setText("REMATCH SENT...");
+    }
+
+    // Show confirmation message
+    this.showMessage("Rematch request sent! Waiting for opponent...", 3000);
   }
 
   updateRematchButtonState(text, color, enabled) {
@@ -3696,8 +3751,20 @@ export class OnlineGameScene extends Phaser.Scene {
       return;
     }
 
+    // Update rematch state
+    this.rematchState = data.rematchState || {};
+
     // Show rematch request notification
     this.showRematchRequestOverlay(data);
+
+    // Update rematch status display
+    this.updateRematchStatusDisplay();
+
+    // Show notification message
+    this.showMessage(
+      `${data.requesterUsername || "Opponent"} wants a rematch!`,
+      4000
+    );
   }
 
   handleRematchConfirmed(data) {
@@ -4959,5 +5026,86 @@ export class OnlineGameScene extends Phaser.Scene {
   updateRoomUI() {
     // Update any room-related UI elements
     console.log("Room UI updated");
+  }
+
+  // Update rematch status display to show who has requested rematch
+  updateRematchStatusDisplay() {
+    if (!this.gameOver || !this.overlayGroup) return;
+
+    // Find existing rematch status text
+    let statusText = this.overlayGroup.children.entries.find(
+      (child) => child.type === "Text" && child.text.includes("Rematch Status:")
+    );
+
+    // Create status text if it doesn't exist
+    if (!statusText) {
+      statusText = this.add
+        .text(
+          GAME_CONFIG.CANVAS_WIDTH / 2,
+          GAME_CONFIG.CANVAS_HEIGHT / 2 + 180,
+          "",
+          {
+            fontFamily: '"Press Start 2P"',
+            fontSize: "16px",
+            fill: "#ffffff",
+            align: "center",
+            stroke: "#000000",
+            strokeThickness: 2,
+          }
+        )
+        .setOrigin(0.5)
+        .setDepth(10001);
+      this.overlayGroup.add(statusText);
+    }
+
+    // Generate status text based on rematch state
+    let statusMessage = "📊 Rematch Status:\n";
+
+    if (this.rematchState) {
+      // Check local player status
+      const localPlayerRequested =
+        this.playerPosition === "player1"
+          ? this.rematchState.player1Requested
+          : this.rematchState.player2Requested;
+
+      // Check opponent status
+      const opponentRequested =
+        this.playerPosition === "player1"
+          ? this.rematchState.player2Requested
+          : this.rematchState.player1Requested;
+
+      statusMessage += `You: ${
+        localPlayerRequested ? "✅ READY FOR REMATCH" : "⏳ Not requested"
+      }\n`;
+      statusMessage += `Opponent: ${
+        opponentRequested ? "✅ READY FOR REMATCH" : "⏳ Not requested"
+      }`;
+
+      if (localPlayerRequested && opponentRequested) {
+        statusMessage += "\n\n🎮 Both players ready! Starting rematch...";
+        statusText.setFill("#00ff00"); // Green for ready
+      } else if (localPlayerRequested) {
+        statusMessage += "\n\n⌛ Waiting for opponent to accept...";
+        statusText.setFill("#ffff00"); // Yellow for waiting
+      } else if (opponentRequested) {
+        statusMessage +=
+          "\n\n❓ Opponent wants a rematch! Make your decision...";
+        statusText.setFill("#ff8800"); // Orange for action needed
+      } else {
+        statusMessage += "\n\n❓ No rematch requests yet";
+        statusText.setFill("#ffffff"); // White for neutral
+      }
+    } else {
+      statusMessage += "No rematch data available";
+      statusText.setFill("#ffffff");
+    }
+
+    statusText.setText(statusMessage);
+
+    console.log("🔄 Rematch status updated:", {
+      playerPosition: this.playerPosition,
+      rematchState: this.rematchState,
+      statusMessage: statusMessage.replace(/\n/g, " | "),
+    });
   }
 }
