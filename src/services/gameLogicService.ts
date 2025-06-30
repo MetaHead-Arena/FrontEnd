@@ -153,16 +153,10 @@ class GameLogicService {
   private eventListeners: Map<string, Function[]> = new Map();
 
   constructor() {
-    // Prevent automatic initialization unless explicitly requested.
-    if (
-      typeof window !== "undefined" &&
-      (window as any).__ENABLE_GAMELOGIC_SERVICE === true
-    ) {
-      this.init();
-    } else {
-      // Skip initialization to avoid duplicate socket/physics loops
-      console.info("GameLogicService auto-init disabled");
-    }
+    // COMPLETELY DISABLED: This service is causing duplicate physics loops
+    // and conflicting with OnlineGameScene. All functionality has been
+    // moved to OnlineGameScene for better integration.
+    console.info("GameLogicService disabled - using OnlineGameScene instead");
   }
 
   private init(): void {

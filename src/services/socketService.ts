@@ -579,7 +579,7 @@ class SocketService {
   }
   // END EDIT
 
-  // BEGIN EDIT: Update sendInput switch to remove duplicate case string and handle synonyms uniformly
+  // Simplified input method for direct socket emissions
   sendInput(action: string, data: any = {}): void {
     if (!this.socket || !this.isConnected || !this.roomJoined) {
       console.error(
@@ -588,24 +588,9 @@ class SocketService {
       return;
     }
 
-    // Allow synonyms for convenience
-    if (action === "moveRight") action = "move-right";
-
-    const allowedActions = [
-      "move-left",
-      "move-right",
-      "jump",
-      "kick",
-      "stop-move",
-    ];
-
-    if (!allowedActions.includes(action)) {
-      console.log(`Emitting generic input ${action}:`, data);
-    }
-
+    console.log(`Emitting ${action}:`, data);
     this.socket.emit(action, data);
   }
-  // END EDIT
 
   // Enhanced player position synchronization matching demo
   sendPlayerPosition(positionDataOrPosition: any, maybePlayerData?: any): void {

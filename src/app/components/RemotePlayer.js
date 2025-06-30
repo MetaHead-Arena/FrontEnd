@@ -213,6 +213,14 @@ export class RemotePlayer {
   handlePositionUpdate(positionData) {
     if (!this.isOnlinePlayer || !positionData) return;
 
+    console.log("🔄 RemotePlayer receiving position update:", {
+      x: positionData.x,
+      y: positionData.y,
+      velocityX: positionData.velocityX,
+      velocityY: positionData.velocityY,
+      direction: positionData.direction,
+    });
+
     // Calculate time since last update to determine if we need immediate correction
     const now = Date.now();
     if (!this.lastPositionUpdate) {
@@ -235,14 +243,27 @@ export class RemotePlayer {
         ? positionData.isOnGround
         : this.isOnGround;
 
-    // If too much time has passed since last update, snap to position immediately
-    if (timeSinceLastUpdate > 200) {
-      console.log(
-        "Long time since last position update, snapping to server position"
-      );
+    // Calculate position difference for snap decision
+    const positionDiff = Math.sqrt(
+      Math.pow(this.targetX - this.sprite.x, 2) +
+        Math.pow(this.targetY - this.sprite.y, 2)
+    );
+
+    // If too much time has passed since last update OR large position difference, snap to position immediately
+    if (timeSinceLastUpdate > 200 || positionDiff > 100) {
+      console.log("📍 Snapping remote player to server position", {
+        timeSinceLastUpdate,
+        positionDiff,
+        from: { x: this.sprite.x, y: this.sprite.y },
+        to: { x: this.targetX, y: this.targetY },
+      });
       this.sprite.x = this.targetX;
       this.sprite.y = this.targetY;
       this.sprite.body.setVelocity(this.targetVelocityX, this.targetVelocityY);
+    } else {
+      console.log("🎯 Smooth interpolation to target position", {
+        positionDiff,
+      });
     }
   }
 

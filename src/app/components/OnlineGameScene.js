@@ -129,6 +129,24 @@ export class OnlineGameScene extends Phaser.Scene {
       "court"
     );
 
+    // Set up keyboard controls (like GameScene)
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd = {
+      W: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+      A: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+      S: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+      D: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+    };
+    this.space = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SPACE
+    );
+    this.enter = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.ENTER
+    );
+    this.shift = this.input.keyboard.addKey(
+      Phaser.Input.Keyboard.KeyCodes.SHIFT
+    );
+
     // Create physics world boundaries
     this.createFieldBoundaries();
 
@@ -497,82 +515,127 @@ export class OnlineGameScene extends Phaser.Scene {
   resetPlayerPositions() {
     if (this.player1) {
       if (this.playerPosition === "player1") {
-        // This player is player1 (right side)
-        this.player1.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x;
-        this.player1.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y;
-        console.log("Player1 (local) positioned on right side");
-      } else {
-        // This player is player2 (left side)
+        // Local player is player1 (left side)
         this.player1.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x;
         this.player1.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y;
-        console.log("Player1 (local) positioned on left side");
+        console.log("Local player reset to left side");
+      } else {
+        // Local player is player2 (right side)
+        this.player1.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x;
+        this.player1.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y;
+        console.log("Local player reset to right side");
       }
       this.player1.sprite.body.setVelocity(0, 0);
     }
 
     if (this.player2) {
       if (this.playerPosition === "player1") {
-        // Remote player is on left
-        this.player2.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x;
-        this.player2.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y;
-        console.log("Player2 (remote) positioned on left side");
-      } else {
-        // Remote player is on right
+        // Remote player is player2 (right side)
         this.player2.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x;
         this.player2.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y;
-        console.log("Player2 (remote) positioned on right side");
+        console.log("Remote player reset to right side");
+      } else {
+        // Remote player is player1 (left side)
+        this.player2.sprite.x = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x;
+        this.player2.sprite.y = GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y;
+        console.log("Remote player reset to left side");
       }
       this.player2.sprite.body.setVelocity(0, 0);
     }
   }
 
   createPlayers() {
+    console.log("=== OnlineGameScene PLAYER CREATION DEBUG ===");
+    console.log("Player position from backend:", this.playerPosition);
+    console.log("Ball authority:", this.isBallAuthority);
     console.log(
-      "OnlineGameScene creating players with position:",
-      this.playerPosition
+      "PLAYER1 config position:",
+      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1
+    );
+    console.log(
+      "PLAYER2 config position:",
+      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2
     );
 
+    // SIMPLIFIED APPROACH: Always create local player as player1, remote as player2
+    // The actual field position (left/right) is determined by this.playerPosition
+
     if (this.playerPosition === "player1") {
-      // This player is Player 1: right side, use "player2" image
-      // Use 'none' to disable Player class input handling - OnlineGameScene handles input
+      // This client is player1 (left side of field)
+      console.log(
+        "Creating LOCAL player on LEFT side (300px), REMOTE player on RIGHT side (1200px)"
+      );
+
+      // Local player: left side, WASD controls, player1 sprite
       this.player1 = new Player(
         this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x, // 300 (left)
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
         "PLAYER1",
-        "none", // Disable Player class input handling
-        "player2"
+        "wasd",
+        "player1"
       );
-      // Remote player is Player 2: left side, use "player1" image
+
+      // Remote player: right side, player2 sprite
       this.player2 = new RemotePlayer(
         this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x, // 1200 (right)
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
         "PLAYER2",
-        "player1"
+        "player2"
       );
     } else {
-      // This player is Player 2: left side, use "player1" image
-      // Use 'none' to disable Player class input handling - OnlineGameScene handles input
+      // This client is player2 (right side of field)
+      console.log(
+        "Creating LOCAL player on RIGHT side (1200px), REMOTE player on LEFT side (300px)"
+      );
+
+      // Local player: right side, arrow controls, player2 sprite
       this.player1 = new Player(
         this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x, // 1200 (right)
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
         "PLAYER1",
-        "none", // Disable Player class input handling
-        "player1"
+        "arrows",
+        "player2"
       );
-      // Remote player is Player 1: right side, use "player2" image
+
+      // Remote player: left side, player1 sprite
       this.player2 = new RemotePlayer(
         this,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
-        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x, // 300 (left)
+        GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
         "PLAYER2",
-        "player2"
+        "player1"
       );
     }
 
-    console.log("Online players created successfully");
+    // Set online player properties for local player (player1)
+    this.player1.isOnlinePlayer = true;
+    this.player1.playerPosition = this.playerPosition;
+    this.player1.socketService = this.socketService;
+
+    // Set online player properties for remote player (player2)
+    this.player2.isOnlinePlayer = true;
+    this.player2.remotePlayerPosition =
+      this.playerPosition === "player1" ? "player2" : "player1";
+
+    console.log("=== FINAL PLAYER POSITIONS ===");
+    console.log(
+      "Local player (player1) at:",
+      this.player1.sprite.x,
+      this.player1.sprite.y
+    );
+    console.log(
+      "Remote player (player2) at:",
+      this.player2.sprite.x,
+      this.player2.sprite.y
+    );
+    console.log("Local player controls:", this.player1.controls);
+    console.log("Local player sprite:", this.player1.sprite.texture.key);
+    console.log("Remote player sprite:", this.player2.sprite.texture.key);
+    console.log("Ball authority:", this.isBallAuthority);
+    console.log("=====================================");
   }
 
   notifyGameLoaded() {
@@ -750,7 +813,6 @@ export class OnlineGameScene extends Phaser.Scene {
 
   update() {
     // SAFETY CHECK: If game has started but we still have overlay screens, clear them
-    // This handles edge cases where ready screens persist after game start
     if (
       this.gameStarted &&
       this.overlayGroup &&
@@ -765,23 +827,13 @@ export class OnlineGameScene extends Phaser.Scene {
 
     if (this.isPaused || this.gameOver || this.pausedForGoal) return;
     if (!this.player1 || !this.ball) return;
-
-    // Don't update game logic until game has started
     if (!this.gameStarted) return;
 
-    // Handle input for the local player (player1)
-    this.handleInput();
-
-    // Update player physics and check ground state
+    // Update player physics and ground state (like GameScene)
     if (this.player1 && this.player1.sprite && this.player1.sprite.body) {
-      // Check if player is on ground
-      this.player1.isOnGround = this.player1.sprite.body.touching.down;
-
-      // Update player's current speed for kick power calculation
-      this.player1.currentSpeed = Math.sqrt(
-        this.player1.sprite.body.velocity.x ** 2 +
-          this.player1.sprite.body.velocity.y ** 2
-      );
+      this.player1.isOnGround =
+        this.player1.sprite.body.touching.down ||
+        this.player1.sprite.body.onFloor();
 
       // Call player1 update method if it exists
       if (typeof this.player1.update === "function") {
@@ -789,19 +841,21 @@ export class OnlineGameScene extends Phaser.Scene {
       }
     }
 
-    // CRITICAL: Update remote player (player2) to handle position interpolation
+    // Update remote player (player2)
     if (this.player2 && this.player2.sprite && this.player2.sprite.body) {
-      this.player2.isOnGround = this.player2.sprite.body.touching.down;
+      this.player2.isOnGround =
+        this.player2.sprite.body.touching.down ||
+        this.player2.sprite.body.onFloor();
 
       // Call player2 update method to handle position interpolation
       if (typeof this.player2.update === "function") {
         this.player2.update();
-      } else {
-        console.warn("Remote player missing update method!");
       }
     }
 
-    // REMOVED: Distance-based collision detection - using only Phaser physics now
+    // Handle input for the local player
+    this.handleInput();
+
     // Only ball authority sends ball state updates
     if (this.isBallAuthority && this.ball) {
       this.sendBallPosition();
@@ -815,17 +869,6 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Update UI displays
     this.updatePlayerStatsDisplay();
-
-    // Debug: Log game state every few seconds
-    if (this.time.now % 5000 < 50) {
-      // Approximately every 5 seconds
-      console.log(
-        `🎮 Game update - Time: ${this.gameTime}s, GameStarted: ${
-          this.gameStarted
-        }, Ball Authority: ${this.isBallAuthority}, TimerEvent: ${!!this
-          .timerEvent}`
-      );
-    }
   }
 
   // Add new method for ball-player collision detection
@@ -1315,8 +1358,26 @@ export class OnlineGameScene extends Phaser.Scene {
     }
 
     // Validate that we have the necessary data
-    if (!data.playerPosition) {
-      console.warn("Ready event missing playerPosition, cannot process");
+    let eventPlayerPosition = data.playerPosition;
+
+    // Fallback: try to extract playerPosition from room data if missing
+    if (!eventPlayerPosition && data.room && data.room.players) {
+      const playerInRoom = data.room.players.find(
+        (p) => p.id === data.playerId
+      );
+      if (playerInRoom) {
+        eventPlayerPosition = playerInRoom.position;
+        console.log(
+          "Extracted playerPosition from room data:",
+          eventPlayerPosition
+        );
+      }
+    }
+
+    if (!eventPlayerPosition) {
+      console.warn(
+        "Ready event missing playerPosition and could not extract from room data, cannot process"
+      );
       return;
     }
 
@@ -1328,11 +1389,11 @@ export class OnlineGameScene extends Phaser.Scene {
     }
 
     // Determine if this is about the opponent or self with explicit validation
-    const isOpponent = data.playerPosition !== this.playerPosition;
-    const playerName = data.playerPosition;
+    const isOpponent = eventPlayerPosition !== this.playerPosition;
+    const playerName = eventPlayerPosition;
 
     console.log("Ready event analysis:", {
-      eventPlayerPosition: data.playerPosition,
+      eventPlayerPosition: eventPlayerPosition,
       localPlayerPosition: this.playerPosition,
       isOpponent: isOpponent,
       currentLocalReady: this.isPlayerReady,
@@ -2324,122 +2385,90 @@ export class OnlineGameScene extends Phaser.Scene {
   handleInput() {
     if (!this.gameStarted || !this.socketService || !this.player1) return;
     if (!this.player1.sprite || !this.player1.sprite.body) return;
-
-    // Stop input handling if game is over
     if (this.gameOver) return;
 
-    const cursors = this.input.keyboard.createCursorKeys();
-    const wasd = this.input.keyboard.addKeys("W,S,A,D");
-    const spaceKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.SPACE
-    );
-    const enterKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.ENTER
-    );
-    const shiftKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.SHIFT
-    );
+    // Handle input based on player controls (wasd or arrows)
+    const isWASD = this.player1.controls === "wasd";
+    const leftKey = isWASD ? this.wasd.A : this.cursors.left;
+    const rightKey = isWASD ? this.wasd.D : this.cursors.right;
+    const upKey = isWASD ? this.wasd.W : this.cursors.up;
+    const kickKey = this.space.isDown || this.enter.isDown || this.shift.isDown;
 
-    // Initialize physics constants if not set
-    if (!this.playerSpeed) {
-      this.playerSpeed = GAME_CONFIG.PLAYER.BASE_SPEED * 2.0;
-    }
-    if (!this.jumpPower) {
-      this.jumpPower = Math.abs(GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY);
-    }
+    // Initialize speed
+    const playerSpeed = GAME_CONFIG.PLAYER.BASE_SPEED * 2.0;
+    const jumpPower = Math.abs(GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY);
 
-    // Handle horizontal movement with improved physics
+    // Handle horizontal movement
     let horizontalVelocity = 0;
-    let inputChanged = false;
 
-    // Handle left movement
-    if (cursors.left.isDown || wasd.A.isDown) {
+    if (leftKey.isDown) {
       if (!this.leftPressed) {
         this.leftPressed = true;
         this.socketService.sendMoveLeft(true);
-        inputChanged = true;
       }
-      horizontalVelocity = -this.playerSpeed;
+      horizontalVelocity = -playerSpeed;
       this.player1.direction = "left";
     } else {
       if (this.leftPressed) {
         this.leftPressed = false;
         this.socketService.sendMoveLeft(false);
-        inputChanged = true;
       }
     }
 
-    // Handle right movement
-    if (cursors.right.isDown || wasd.D.isDown) {
+    if (rightKey.isDown) {
       if (!this.rightPressed) {
         this.rightPressed = true;
         this.socketService.sendMoveRight(true);
-        inputChanged = true;
       }
-      horizontalVelocity = this.playerSpeed;
+      horizontalVelocity = playerSpeed;
       this.player1.direction = "right";
     } else {
       if (this.rightPressed) {
         this.rightPressed = false;
         this.socketService.sendMoveRight(false);
-        inputChanged = true;
       }
     }
 
-    // Apply friction when not moving
-    if (horizontalVelocity === 0 && this.player1.isOnGround) {
-      // No horizontal input – set direction to idle
-      if (this.player1.direction !== "idle") {
-        this.player1.direction = "idle";
-      }
+    // Apply horizontal movement
+    if (horizontalVelocity === 0) {
+      this.player1.direction = "idle";
+      // Apply friction
       const currentVelX = this.player1.sprite.body.velocity.x;
-      this.player1.sprite.body.setVelocityX(currentVelX * 0.8); // Apply friction
+      this.player1.sprite.body.setVelocityX(currentVelX * 0.8);
     } else {
-      // Apply horizontal velocity with momentum
-      const currentVelX = this.player1.sprite.body.velocity.x;
-      const targetVelX = horizontalVelocity;
-      const acceleration = this.player1.isOnGround ? 0.7 : 0.3; // Faster acceleration on ground
-      const newVelX = currentVelX + (targetVelX - currentVelX) * acceleration;
-      this.player1.sprite.body.setVelocityX(newVelX);
+      this.player1.sprite.body.setVelocityX(horizontalVelocity);
     }
 
-    // Handle jump with improved physics
-    if ((cursors.up.isDown || wasd.W.isDown) && this.player1.isOnGround) {
+    // Handle jump
+    if (upKey.isDown && this.player1.isOnGround) {
       if (!this.jumpPressed) {
         this.jumpPressed = true;
         this.socketService.sendJump(true);
-        inputChanged = true;
-
-        // Apply jump with improved physics
-        this.player1.sprite.body.setVelocityY(-this.jumpPower);
+        this.player1.sprite.body.setVelocityY(-jumpPower);
         this.player1.isOnGround = false;
-        console.log(`Player jumped with power: ${this.jumpPower}`);
       }
     } else {
       if (this.jumpPressed) {
         this.jumpPressed = false;
         this.socketService.sendJump(false);
-        inputChanged = true;
       }
     }
 
-    // Handle kick - Multiple keys for better accessibility
-    if (spaceKey.isDown || enterKey.isDown || shiftKey.isDown) {
+    // Handle kick
+    if (kickKey) {
       if (!this.kickPressed) {
         this.kickPressed = true;
         this.socketService.sendKick(true);
         this.performKick();
-        inputChanged = true;
       }
     } else {
       if (this.kickPressed) {
         this.kickPressed = false;
         this.socketService.sendKick(false);
-        inputChanged = true;
       }
     }
 
-    // Send player position more frequently for smoother movement
+    // Send player position updates
     this.sendPlayerPosition();
   }
 
@@ -2470,12 +2499,16 @@ export class OnlineGameScene extends Phaser.Scene {
     const dy = Math.abs(this.player1.sprite.y - this.lastSentPosition.y);
     const timeSinceLastSend = now - this.lastSentPosition.time;
 
-    // Reduced threshold for more responsive movement (was 5, now 2)
-    const shouldSendPosition = dx > 2 || dy > 2 || timeSinceLastSend > 100;
+    // Reduced threshold for more responsive movement (was 2, now 1)
+    const shouldSendPosition = dx > 1 || dy > 1 || timeSinceLastSend > 100;
 
     if (shouldSendPosition) {
+      // CRITICAL FIX: Use the actual player position from the player object
+      const actualPlayerPosition =
+        this.player1.playerPosition || this.playerPosition;
+
       const positionData = {
-        position: this.playerPosition,
+        position: actualPlayerPosition, // Use the correct position
         player: {
           x: this.player1.sprite.x,
           y: this.player1.sprite.y,
@@ -3479,52 +3512,46 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   handleRoomJoinedEvent(data) {
-    console.log("=== HANDLING ROOM JOINED EVENT ===");
-    console.log("Room data:", data);
-    console.log("Players in room:", data.players);
+    console.log("🏠 Room joined event received:", data);
 
-    // Get the current player's socket ID
-    const socketId = this.socketService?.getSocket()?.id;
-    console.log("Current socket ID:", socketId);
+    // Store room information
+    this.roomId = data.roomId;
+    this.roomCode = data.roomCode;
+    this.playersInRoom = data.playersInRoom;
 
-    if (data.players && Array.isArray(data.players)) {
-      // Find this player in the room data
-      const thisPlayer = data.players.find((p) => p.id === socketId);
+    // CRITICAL: Get the authoritative player position from backend
+    const backendPlayerPosition = data.playerPosition;
 
-      if (thisPlayer && thisPlayer.position) {
-        console.log(
-          "✅ Found player position from backend:",
-          thisPlayer.position
-        );
+    console.log("🎯 Position assignment from backend:", {
+      currentAssumption: this.playerPosition,
+      backendAssignment: backendPlayerPosition,
+      needsRebuild: this.playerPosition !== backendPlayerPosition,
+    });
 
-        // Update the player position from backend
-        this.playerPosition = thisPlayer.position;
-        this.isBallAuthority = this.playerPosition === "player1";
-
-        // Store in global variables for consistency
-        if (typeof window !== "undefined") {
-          window.__HEADBALL_PLAYER_POSITION = this.playerPosition;
-          window.__HEADBALL_IS_BALL_AUTHORITY = this.isBallAuthority;
-        }
-
-        console.log("Updated player position:", this.playerPosition);
-        console.log("Updated ball authority:", this.isBallAuthority);
-
-        // Update position indicator if UI exists
-        this.updatePositionIndicator();
-
-        console.log("=== ROOM POSITION ASSIGNMENT COMPLETE ===");
-
-        // Ensure sprites/roles align with authoritative assignment
-        this._rebuildPlayersForAuthoritativePosition();
-      } else {
-        console.warn("❌ Could not find player position in room data");
-        console.warn("Available players:", data.players);
-        console.warn("Looking for socket ID:", socketId);
-      }
-    } else {
-      console.warn("❌ No players array in room data");
+    // Store the authoritative position globally for other components
+    if (typeof window !== "undefined") {
+      window.__HEADBALL_PLAYER_POSITION = backendPlayerPosition;
     }
+
+    // Check if we need to rebuild players due to position mismatch
+    if (this.playerPosition !== backendPlayerPosition) {
+      console.log("🔄 Position mismatch detected - rebuilding players:", {
+        from: this.playerPosition,
+        to: backendPlayerPosition,
+      });
+
+      // Update our position
+      this.playerPosition = backendPlayerPosition;
+
+      // Rebuild players with correct positions
+      this._rebuildPlayersForAuthoritativePosition();
+    } else {
+      console.log("✅ Position matches - no rebuild needed");
+    }
+
+    // Update UI
+    this.updateRoomUI();
+    this.showMessage(`Joined room: ${this.roomCode}`, 3000);
   }
 
   /**
@@ -3534,27 +3561,37 @@ export class OnlineGameScene extends Phaser.Scene {
    * players appearing frozen).
    */
   _rebuildPlayersForAuthoritativePosition() {
-    if (!this.gameMode === "online") return;
-
-    // If players already match the authoritative position do nothing
-    if (this.playerPosition === this._assumedPosition) return;
-
-    console.warn(
-      "Rebuilding player sprites to match authoritative position:",
+    console.log(
+      "🔨 Rebuilding players for authoritative position:",
       this.playerPosition
     );
 
-    // Destroy existing sprites gracefully
-    if (this.player1 && this.player1.destroy) this.player1.destroy();
-    if (this.player2 && this.player2.destroy) this.player2.destroy();
+    // Clean up existing players
+    if (this.player1) {
+      this.player1.destroy();
+      this.player1 = null;
+    }
+    if (this.player2) {
+      this.player2.destroy();
+      this.player2 = null;
+    }
 
-    // Re-create players with correct roles
+    // Update ball authority based on position
+    this.isBallAuthority = this.playerPosition === "player1";
+
+    // Store in global variables for consistency
+    if (typeof window !== "undefined") {
+      window.__HEADBALL_IS_BALL_AUTHORITY = this.isBallAuthority;
+    }
+
+    // Recreate players with correct assignments
     this.createPlayers();
 
-    // Update indicators
-    this.updatePositionIndicator();
-
-    // Save new baseline
-    this._assumedPosition = this.playerPosition;
+    console.log("✅ Players rebuilt successfully:", {
+      playerPosition: this.playerPosition,
+      isBallAuthority: this.isBallAuthority,
+      hasPlayer1: !!this.player1,
+      hasPlayer2: !!this.player2,
+    });
   }
 }

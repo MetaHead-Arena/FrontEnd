@@ -1,38 +1,17 @@
 import { GAME_CONFIG } from "./config.js";
 
 export class Player {
-  constructor(scene, x, y, playerKey, controls, spriteKey = "player1") {
+  constructor(scene, x, y, playerKey, controls = "wasd", spriteKey = null) {
     this.scene = scene;
-    this.controls = controls;
     this.playerKey = playerKey;
-    // this.sprite = scene.physics.add.sprite(x, y, spriteKey);
-    // Get attributes from config (with fallback to defaults)
+    this.controls = controls;
+
+    // Load player attributes
     this.attributes = GAME_CONFIG.PLAYER.ATTRIBUTES[playerKey] || {
       ...GAME_CONFIG.PLAYER.DEFAULT_ATTRIBUTES,
-      name: `Player ${playerKey}`,
+      name: playerKey,
       color: 0xffffff,
     };
-
-    // Base attributes (what the player starts with)
-    this.baseAttributes = {
-      speed: this.attributes.speed,
-      jumpHeight: this.attributes.jumpHeight,
-      size: this.attributes.size,
-      kickPower: this.attributes.kickPower,
-      shootPower: this.attributes.shootPower,
-    };
-
-    // Current attributes (base + power-ups)
-    this.currentAttributes = { ...this.baseAttributes };
-
-    // Calculate actual stats based on current attributes
-    this.speed = GAME_CONFIG.PLAYER.BASE_SPEED * this.currentAttributes.speed;
-    this.jumpVelocity =
-      GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY * this.currentAttributes.jumpHeight;
-    this.kickPower =
-      GAME_CONFIG.PLAYER.BASE_KICK_POWER * this.currentAttributes.kickPower;
-    this.shootPower =
-      GAME_CONFIG.PLAYER.BASE_SHOOT_POWER * this.currentAttributes.shootPower;
 
     // Create player sprite with texture
     const textureKey = spriteKey || playerKey.toLowerCase();
@@ -57,28 +36,32 @@ export class Player {
 
     // Movement properties
     this.isOnGround = false;
+    this.direction = "idle";
+    this.currentSpeed = 0;
+
+    // Shooting properties
+    this.isShooting = false;
+    this.shootCooldown = GAME_CONFIG.PLAYER.SHOOT_COOLDOWN;
+    this.lastShootTime = 0;
+
+    // Online multiplayer properties
+    this.isOnlinePlayer = false;
+    this.playerPosition = null; // Will be set by OnlineGameScene
+    this.socketService = null; // Will be set by OnlineGameScene
+    this.lastPositionSend = null;
 
     // Power-up system
     this.activePowerups = {};
-    this.basePowerupIndicator = null;
+    this.powerupTimers = {};
+    this.powerupIndicator = null;
 
-    // Shooting system
-    this.isShooting = false;
-    this.shootCooldown = 0;
-    this.lastShootTime = 0;
-
-    // Online multiplayer state
-    this.isOnlinePlayer = scene.gameMode === "online";
-    this.socketService = null;
-    this.playerPosition = null;
-
-    // Initialize socket service for online games
-    if (this.isOnlinePlayer) {
-      this.initializeSocketService();
-    }
+    // Current attributes (base + power-ups)
+    this.currentAttributes = { ...this.attributes };
 
     // Setup collisions
     this.setupCollisions();
+
+    console.log(`Player created: ${playerKey} with controls: ${controls}`);
   }
 
   async initializeSocketService() {
@@ -111,29 +94,48 @@ export class Player {
   }
 
   update() {
-    const wasOnGround = this.isOnGround;
-
+    // Update ground state based on physics body
     this.isOnGround =
-      this.sprite.body.touching.down ||
-      this.sprite.body.onFloor() ||
-      (this.sprite.body.velocity.y >= 0 && this.sprite.body.touching.down);
+      this.sprite.body.touching.down || this.sprite.body.onFloor();
 
-    if (this.isOnGround && !wasOnGround) {
-      // Just landed
-    }
+    // Update current speed for kick power calculation
+    this.currentSpeed = Math.sqrt(
+      this.sprite.body.velocity.x ** 2 + this.sprite.body.velocity.y ** 2
+    );
 
+    // Update power-up timers
+    this.updatePowerupTimers();
+
+    // Update power-up indicator position
     this.updatePowerupIndicatorPosition();
 
-    // Skip input handling if controls is set to "none" (for online games)
+    // Handle input if controls are enabled
     if (this.controls !== "none") {
-      if (this.controls === "arrows") {
-        this.handleArrowControls();
-      } else if (this.controls === "wasd") {
-        this.handleWASDControls();
-      }
+      this.handleInput();
     }
 
-    // Position sending is now handled in GameScene update loop for better performance
+    // Send position updates for online multiplayer
+    if (
+      this.isOnlinePlayer &&
+      this.socketService &&
+      this.playerPosition &&
+      this.scene.gameStarted
+    ) {
+      this.sendPlayerPosition();
+    }
+  }
+
+  handleInput() {
+    // For online players, input is handled centrally by OnlineGameScene
+    if (this.isOnlinePlayer) {
+      return;
+    }
+
+    if (this.controls === "arrows") {
+      this.handleArrowControls();
+    } else if (this.controls === "wasd") {
+      this.handleWASDControls();
+    }
   }
 
   handleArrowControls() {
@@ -201,63 +203,64 @@ export class Player {
   }
 
   sendPlayerPosition() {
-    if (
-      this.isOnlinePlayer &&
-      this.socketService &&
-      this.playerPosition &&
-      this.scene.gameStarted
-    ) {
-      // Throttle position updates to every 50ms (20 times per second)
-      const now = Date.now();
-      if (!this.lastPositionSend || now - this.lastPositionSend > 50) {
-        const playerData = {
-          x: this.sprite.x,
-          y: this.sprite.y,
-          velocityX: this.sprite.body.velocity.x,
-          velocityY: this.sprite.body.velocity.y,
-          direction: this.getDirection(),
-          isOnGround: this.isOnGround,
-        };
+    if (!this.socketService || !this.sprite || !this.playerPosition) {
+      return;
+    }
 
-        console.log(`Sending position for ${this.playerPosition}:`, playerData);
-        this.socketService.sendPlayerPosition({
-          position: this.playerPosition,
-          player: playerData,
-        });
-        this.lastPositionSend = now;
-      }
+    // Throttle position updates to every 50ms (20 times per second)
+    const now = Date.now();
+    if (!this.lastPositionSend || now - this.lastPositionSend > 50) {
+      const playerData = {
+        x: this.sprite.x,
+        y: this.sprite.y,
+        velocityX: this.sprite.body.velocity.x,
+        velocityY: this.sprite.body.velocity.y,
+        direction: this.getDirection(),
+        isOnGround: this.isOnGround,
+      };
+
+      console.log(`Sending position for ${this.playerPosition}:`, playerData);
+      this.socketService.sendPlayerPosition({
+        position: this.playerPosition,
+        player: playerData,
+      });
+      this.lastPositionSend = now;
     }
   }
 
   getDirection() {
-    if (this.sprite.body.velocity.x < 0) return "left";
-    if (this.sprite.body.velocity.x > 0) return "right";
-    return "idle";
+    if (this.sprite.body.velocity.x < -1) {
+      return "left";
+    } else if (this.sprite.body.velocity.x > 1) {
+      return "right";
+    } else {
+      return "idle";
+    }
   }
 
   updateCurrentAttributes() {
     this.currentAttributes.speed =
-      this.baseAttributes.speed *
+      this.attributes.speed *
       (this.activePowerups.SPEED
         ? GAME_CONFIG.POWERUPS.TYPES.SPEED.multiplier
         : 1);
 
     this.currentAttributes.jumpHeight =
-      this.baseAttributes.jumpHeight *
+      this.attributes.jumpHeight *
       (this.activePowerups.JUMP
         ? GAME_CONFIG.POWERUPS.TYPES.JUMP.multiplier
         : 1);
 
-    this.currentAttributes.size = this.baseAttributes.size;
+    this.currentAttributes.size = this.attributes.size;
 
     this.currentAttributes.kickPower =
-      this.baseAttributes.kickPower *
+      this.attributes.kickPower *
       (this.activePowerups.KICK
         ? GAME_CONFIG.POWERUPS.TYPES.KICK.multiplier
         : 1);
 
     this.currentAttributes.shootPower =
-      this.baseAttributes.shootPower *
+      this.attributes.shootPower *
       (this.activePowerups.SHOOT
         ? GAME_CONFIG.POWERUPS.TYPES.SHOOT.multiplier
         : 1);
@@ -331,8 +334,8 @@ export class Player {
   }
 
   updatePowerupIndicator() {
-    if (this.basePowerupIndicator) {
-      this.basePowerupIndicator.destroy();
+    if (this.powerupIndicator) {
+      this.powerupIndicator.destroy();
     }
 
     const activePowerups = Object.keys(this.activePowerups);
@@ -342,7 +345,7 @@ export class Player {
       .map((type) => GAME_CONFIG.POWERUPS.TYPES[type].icon)
       .join(" ");
 
-    this.basePowerupIndicator = this.scene.add.text(
+    this.powerupIndicator = this.scene.add.text(
       this.sprite.x,
       this.sprite.y - 80,
       powerupText,
@@ -354,20 +357,29 @@ export class Player {
         strokeThickness: 2,
       }
     );
-    this.basePowerupIndicator.setOrigin(0.5, 0.5);
-    this.basePowerupIndicator.setDepth(1000);
+    this.powerupIndicator.setOrigin(0.5, 0.5);
+    this.powerupIndicator.setDepth(1000);
   }
 
   updatePowerupIndicatorPosition() {
-    if (this.basePowerupIndicator) {
-      this.basePowerupIndicator.x = this.sprite.x;
-      this.basePowerupIndicator.y = this.sprite.y - 80;
+    if (this.powerupIndicator) {
+      this.powerupIndicator.x = this.sprite.x;
+      this.powerupIndicator.y = this.sprite.y - 80;
     }
   }
 
+  updatePowerupTimers() {
+    Object.keys(this.powerupTimers).forEach((type) => {
+      this.powerupTimers[type] -= 16; // Assuming 60 FPS
+      if (this.powerupTimers[type] <= 0) {
+        this.removePowerup(type);
+      }
+    });
+  }
+
   destroy() {
-    if (this.basePowerupIndicator) {
-      this.basePowerupIndicator.destroy();
+    if (this.powerupIndicator) {
+      this.powerupIndicator.destroy();
     }
     if (this.sprite) {
       this.sprite.destroy();
