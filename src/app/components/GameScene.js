@@ -1316,7 +1316,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
         "PLAYER1",
-        "both", // Allow both control schemes
+        "wasd", // Allow both control schemes
         "player1"
       );
       // Player 2: AI, right side, use "ai-head" image
@@ -1335,7 +1335,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y,
         "PLAYER1",
-        "both", // Allow both control schemes
+        "wasd", // Allow both control schemes
         "player1"
       );
       this.player2 = new Player(
@@ -1343,7 +1343,7 @@ export class GameScene extends Phaser.Scene {
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
         GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y,
         "PLAYER2",
-        "both", // Allow both control schemes
+        "arrows", // Allow both control schemes
         "player2"
       );
     }
@@ -2184,12 +2184,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   startGameTimer() {
-    // Don't start timer unless game has actually started
-    if (!this.gameStarted) {
-      console.log("Timer not started - game not yet started");
-      return;
-    }
+    // Don't start timer if game has already started
+    // if (!this.gameStarted) {
+    //   console.log("Timer not started - game already started");
+    //   return;
+    // }
 
+    this.gameStarted = true;
     this.gameTime = GAME_CONFIG.GAME_DURATION;
     this.updateTimerDisplay();
 
@@ -2202,7 +2203,6 @@ export class GameScene extends Phaser.Scene {
 
     console.log("Game timer started");
   }
-
   updateTimer() {
     if (this.gameOver || this.pausedForGoal || this.isPaused) return;
 

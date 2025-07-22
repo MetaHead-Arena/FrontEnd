@@ -130,11 +130,7 @@ export class OnlineGameScene extends Phaser.Scene {
     this.physics.world.gravity.y = GAME_CONFIG.GRAVITY;
 
     // Create background
-    this.add.image(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.CANVAS_HEIGHT / 2,
-      "court"
-    );
+    this.add.image(0, 0, "court").setOrigin(0, 0).setDisplaySize(1536, 1024);
 
     // Set up keyboard controls (like GameScene)
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -2075,7 +2071,8 @@ export class OnlineGameScene extends Phaser.Scene {
         "left-net"
       )
       .setOrigin(0.5, 1)
-      .setScale(0.91, 0.91)
+      .setScale(0.9, 0.9)
+      .setAlpha(0.85)
       .setDepth(5);
 
     this.rightNet = this.add
@@ -2085,7 +2082,8 @@ export class OnlineGameScene extends Phaser.Scene {
         "right-net"
       )
       .setOrigin(0.5, 1)
-      .setScale(0.91, 0.91)
+      .setScale(0.9, 0.9)
+      .setAlpha(0.85)
       .setDepth(5);
   }
 
@@ -2400,8 +2398,15 @@ export class OnlineGameScene extends Phaser.Scene {
     this.goalCooldown = GAME_CONFIG.GOAL_COOLDOWN;
     this.pausedForGoal = true;
 
-    // Reset after goal
-    this.time.delayedCall(GAME_CONFIG.GOAL_PAUSE_DURATION, () => {
+    // Add stop screen
+    this.showGoalPauseScreen();
+
+// Reset after Goal after a longer delay (for example 3 seconds)
+    this.time.delayedCall(3000, () => {
+      if (this.overlayGroup) {
+        this.overlayGroup.clear(true, true);
+        this.overlayGroup = null;
+      }
       this.resetAfterGoal();
     });
   }
@@ -5542,5 +5547,45 @@ export class OnlineGameScene extends Phaser.Scene {
       rematchState: this.rematchState,
       statusMessage: statusMessage.replace(/\n/g, " | "),
     });
+  }
+
+  showGoalPauseScreen() {
+    if (this.overlayGroup && this.overlayGroup.children) {
+      this.overlayGroup.clear(true, true);
+    }
+    this.overlayGroup = null;
+    this.overlayGroup = this.add.group();
+
+    // خلفية شفافة
+    const overlay = this.add
+      .rectangle(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        GAME_CONFIG.CANVAS_WIDTH,
+        GAME_CONFIG.CANVAS_HEIGHT,
+        0x000000,
+        0.7
+      )
+      .setDepth(9999);
+    this.overlayGroup.add(overlay);
+
+    // نص الهدف
+    const goalText = this.add
+      .text(
+        GAME_CONFIG.CANVAS_WIDTH / 2,
+        GAME_CONFIG.CANVAS_HEIGHT / 2,
+        "GOAL!",
+        {
+          fontFamily: '"Press Start 2P"',
+          fontSize: "64px",
+          fill: "#fde047",
+          stroke: "#000000",
+          strokeThickness: 6,
+          align: "center",
+        }
+      )
+      .setOrigin(0.5)
+      .setDepth(10000);
+    this.overlayGroup.add(goalText);
   }
 }

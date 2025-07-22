@@ -158,37 +158,27 @@ export class Player {
   }
 
   handleInput() {
-    // For online players, input is handled centrally by OnlineGameScene
-    if (this.isOnlinePlayer) {
-      return;
-    }
+    if (this.isOnlinePlayer) return;
 
-    // Allow both WASD and arrow keys for all players
-    this.handleCombinedControls();
+    if (this.controls === "wasd") {
+      this.handleWASDControls();
+    } else if (this.controls === "arrows") {
+      this.handleArrowControls();
+    } else if (this.controls === "both") {
+      this.handleCombinedControls();
+    }
   }
 
-  handleCombinedControls() {
-    const cursors = this.scene.cursors;
+  handleWASDControls() {
     const wasd = this.scene.wasd;
     const space = this.scene.space;
-    const rightShift = this.scene.rightShift;
-
     const currentSpeed = this.getCurrentSpeed();
 
-    // Check both WASD and arrow keys for movement
-    const leftPressed =
-      (wasd && wasd.A.isDown) || (cursors && cursors.left.isDown);
-    const rightPressed =
-      (wasd && wasd.D.isDown) || (cursors && cursors.right.isDown);
-    const upPressed = (wasd && wasd.W.isDown) || (cursors && cursors.up.isDown);
-    const kickPressed =
-      (space && space.isDown) || (rightShift && rightShift.isDown);
-
-    if (leftPressed) {
+    if (wasd.A.isDown) {
       this.sprite.setVelocityX(-currentSpeed);
       this.direction = "left";
       this.sendInput("move-left", { pressed: true });
-    } else if (rightPressed) {
+    } else if (wasd.D.isDown) {
       this.sprite.setVelocityX(currentSpeed);
       this.direction = "right";
       this.sendInput("move-right", { pressed: true });
@@ -199,13 +189,45 @@ export class Player {
       this.sendInput("move-right", { pressed: false });
     }
 
-    if (upPressed && this.isOnGround) {
+    if (wasd.W.isDown && this.isOnGround) {
       this.sprite.setVelocityY(this.getCurrentJumpVelocity());
       this.isOnGround = false;
       this.sendInput("jump", { pressed: true });
     }
 
-    if (kickPressed && this.canShoot()) {
+    if (space.isDown && this.canShoot()) {
+      this.shoot();
+      this.sendInput("kick", { pressed: true });
+    }
+  }
+
+  handleArrowControls() {
+    const cursors = this.scene.cursors;
+    const rightShift = this.scene.rightShift;
+    const currentSpeed = this.getCurrentSpeed();
+
+    if (cursors.left.isDown) {
+      this.sprite.setVelocityX(-currentSpeed);
+      this.direction = "left";
+      this.sendInput("move-left", { pressed: true });
+    } else if (cursors.right.isDown) {
+      this.sprite.setVelocityX(currentSpeed);
+      this.direction = "right";
+      this.sendInput("move-right", { pressed: true });
+    } else {
+      this.sprite.setVelocityX(0);
+      this.direction = "idle";
+      this.sendInput("move-left", { pressed: false });
+      this.sendInput("move-right", { pressed: false });
+    }
+
+    if (cursors.up.isDown && this.isOnGround) {
+      this.sprite.setVelocityY(this.getCurrentJumpVelocity());
+      this.isOnGround = false;
+      this.sendInput("jump", { pressed: true });
+    }
+
+    if (rightShift.isDown && this.canShoot()) {
       this.shoot();
       this.sendInput("kick", { pressed: true });
     }
