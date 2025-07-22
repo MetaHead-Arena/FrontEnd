@@ -42,10 +42,7 @@ if (projectId) {
       email: false,
       socials: false,
       onramp: false,
-      // Disable additional features that might cause 404 errors
-      walletConnect: false,
-      coinbase: false,
-      rainbow: false,
+
     },
     // MetaMask-only configuration
     featuredWalletIds: [
@@ -56,12 +53,6 @@ if (projectId) {
       "--w3m-font-family": "monospace",
       "--w3m-border-radius-master": "4px",
     },
-    // Minimal configuration to avoid 404 errors
-    walletConnectVersion: 2,
-    enableAnalytics: false,
-    enableOnramp: false,
-    enableEmail: false,
-    enableSocials: false,
   });
 }
 
