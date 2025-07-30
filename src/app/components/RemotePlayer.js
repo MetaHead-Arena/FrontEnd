@@ -1,64 +1,24 @@
+import { BasePlayer } from "./BasePlayer.js";
 import { GAME_CONFIG } from "./config.js";
 
-export class RemotePlayer {
+export class RemotePlayer extends BasePlayer {
   constructor(scene, x, y, playerKey, spriteKey = "player2") {
-    this.scene = scene;
-    this.playerKey = playerKey;
-    this.attributes = GAME_CONFIG.PLAYER.ATTRIBUTES[playerKey] || {
-      ...GAME_CONFIG.PLAYER.DEFAULT_ATTRIBUTES,
-      name: `Remote ${playerKey}`,
-      color: 0xffffff,
-    };
+    super(scene, x, y, playerKey, spriteKey);
 
-    // Create player sprite with texture
-    const textureKey = spriteKey || playerKey.toLowerCase();
-    this.sprite = scene.physics.add.sprite(x, y, textureKey);
-    this.sprite.setOrigin(0.5, 1); // Bottom center
-
-    // Scale image to match PLAYER.WIDTH & HEIGHT
-    const targetWidth = GAME_CONFIG.PLAYER.WIDTH * this.attributes.size;
-    const targetHeight = GAME_CONFIG.PLAYER.HEIGHT * this.attributes.size;
-
-    const texture = scene.textures.get(textureKey);
-    const frame = texture.getSourceImage();
-    const scaleX = targetWidth / frame.width;
-    const scaleY = targetHeight / frame.height;
-
-    this.sprite.setScale(scaleX, scaleY);
-
-    this.sprite.setBounce(GAME_CONFIG.PLAYER.BOUNCE);
-    this.sprite.setCollideWorldBounds(true);
-    this.sprite.setDragX(GAME_CONFIG.PLAYER.DRAG_X);
-    this.sprite.refreshBody();
-
-    // Movement properties
-    this.isOnGround = false;
-    this.direction = "idle";
-
-    // Shooting properties (for compatibility with Player class)
-    this.isShooting = false;
-    this.shootCooldown = 0;
-    this.lastShootTime = 0;
-
-    // Online multiplayer state
     this.isOnlinePlayer = scene.gameMode === "online";
     this.socketService = null;
     this.remotePlayerPosition = null;
 
-    // Position interpolation for smooth movement
     this.targetX = x;
     this.targetY = y;
     this.targetVelocityX = 0;
     this.targetVelocityY = 0;
-    this.interpolationFactor = 0.7; // How much to interpolate towards target
+    this.interpolationFactor = 0.7;
+    this.positionBuffer = [];
 
-    // Initialize socket service for online games
     if (this.isOnlinePlayer) {
       this.initializeSocketService();
     }
-
-    // Setup collisions
-    this.setupCollisions();
   }
 
   async initializeSocketService() {
@@ -66,7 +26,6 @@ export class RemotePlayer {
       const { socketService } = await import("../../services/socketService");
       this.socketService = socketService;
 
-      // Determine remote player position (opposite of local player)
       if (typeof window !== "undefined" && window.__HEADBALL_PLAYER_POSITION) {
         const localPosition = window.__HEADBALL_PLAYER_POSITION;
         this.remotePlayerPosition =
@@ -85,69 +44,36 @@ export class RemotePlayer {
     }
   }
 
-  setupCollisions() {
-    this.scene.physics.add.collider(this.sprite, this.scene.ground, () => {
-      this.isOnGround = true;
-    });
-
-    this.scene.physics.add.collider(this.sprite, this.scene.leftWall);
-    this.scene.physics.add.collider(this.sprite, this.scene.rightWall);
-    this.scene.physics.add.collider(this.sprite, this.scene.topWall);
-  }
-
   update() {
-    // Interpolate position for smooth movement
+    super.update();
     this.interpolatePosition();
-
-    // Update ground state
-    this.isOnGround =
-      this.sprite.body.touching.down || this.sprite.body.onFloor();
   }
 
   interpolatePosition() {
-    // Smoothly interpolate towards target position
-    const currentX = this.sprite.x;
-    const currentY = this.sprite.y;
-    const currentVelocityX = this.sprite.body.velocity.x;
-    const currentVelocityY = this.sprite.body.velocity.y;
+    const now = Date.now();
+    const renderTimestamp = now - 100; //- (1000 / this.scene.game.config.fps);
 
-    // Calculate position difference to determine interpolation strategy
-    const positionDiffX = Math.abs(this.targetX - currentX);
-    const positionDiffY = Math.abs(this.targetY - currentY);
-    const totalPositionDiff = Math.sqrt(
-      positionDiffX * positionDiffX + positionDiffY * positionDiffY
-    );
-
-    // Adaptive interpolation factor based on distance
-    let interpolationFactor = this.interpolationFactor;
-
-    // If the player is far away, snap more aggressively
-    if (totalPositionDiff > 50) {
-      interpolationFactor = 0.9; // Fast correction for large differences
-    } else if (totalPositionDiff > 20) {
-      interpolationFactor = 0.8; // Medium correction for medium differences
-    } else {
-      interpolationFactor = 0.6; // Smooth interpolation for small differences
+    const buffer = this.positionBuffer;
+    while (buffer.length >= 2 && buffer[1].timestamp <= renderTimestamp) {
+      buffer.shift();
     }
 
-    // Interpolate position
-    const newX = currentX + (this.targetX - currentX) * interpolationFactor;
-    const newY = currentY + (this.targetY - currentY) * interpolationFactor;
+    if (buffer.length >= 2 && buffer[0].timestamp <= renderTimestamp) {
+      const x0 = buffer[0].x;
+      const x1 = buffer[1].x;
+      const y0 = buffer[0].y;
+      const y1 = buffer[1].y;
+      const t0 = buffer[0].timestamp;
+      const t1 = buffer[1].timestamp;
 
-    // Interpolate velocity
-    const newVelocityX =
-      currentVelocityX +
-      (this.targetVelocityX - currentVelocityX) * interpolationFactor;
-    const newVelocityY =
-      currentVelocityY +
-      (this.targetVelocityY - currentVelocityY) * interpolationFactor;
+      const interFactor = (renderTimestamp - t0) / (t1 - t0);
+      const newX = x0 + (x1 - x0) * interFactor;
+      const newY = y0 + (y1 - y0) * interFactor;
 
-    // Apply interpolated values
-    this.sprite.x = newX;
-    this.sprite.y = newY;
-    this.sprite.body.setVelocity(newVelocityX, newVelocityY);
+      this.sprite.x = newX;
+      this.sprite.y = newY;
+    }
 
-    // Update direction based on velocity
     if (newVelocityX < -1) {
       this.direction = "left";
     } else if (newVelocityX > 1) {
@@ -157,12 +83,11 @@ export class RemotePlayer {
     }
   }
 
-  // Handle remote input from server
   handleRemoteInput(inputData) {
     if (!this.isOnlinePlayer || !inputData.action) return;
 
     const currentSpeed =
-      GAME_CONFIG.PLAYER.BASE_SPEED * this.attributes.speed * 2.0; // Match OnlineGameScene speed
+      GAME_CONFIG.PLAYER.BASE_SPEED * this.attributes.speed * 2.0;
     const currentJumpVelocity = Math.abs(
       GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY * this.attributes.jumpHeight
     );
@@ -173,7 +98,6 @@ export class RemotePlayer {
           this.targetVelocityX = -currentSpeed;
           this.direction = "left";
         } else {
-          // Apply friction when stopping movement
           this.targetVelocityX *= 0.8;
         }
         break;
@@ -182,7 +106,6 @@ export class RemotePlayer {
           this.targetVelocityX = currentSpeed;
           this.direction = "right";
         } else {
-          // Apply friction when stopping movement
           this.targetVelocityX *= 0.8;
         }
         break;
@@ -197,82 +120,27 @@ export class RemotePlayer {
         break;
       case "kick":
         if (inputData.pressed) {
-          // Visual feedback for kick action
           this.showKickEffect();
         }
         break;
       case "stop":
-        // Handle stop movement
         this.targetVelocityX = 0;
         this.direction = "idle";
         break;
     }
   }
 
-  // Handle position update from server
   handlePositionUpdate(positionData) {
     if (!this.isOnlinePlayer || !positionData) return;
 
-    // Only log position updates occasionally to reduce console spam
-    const logPosition = Math.random() < 0.01; // Log 1% of position updates
-    if (logPosition) {
-      console.log("🔄 RemotePlayer receiving position update:", {
-        x: positionData.x,
-        y: positionData.y,
-        velocityX: positionData.velocityX,
-        velocityY: positionData.velocityY,
-        direction: positionData.direction,
-      });
-    }
-
-    // Calculate time since last update to determine if we need immediate correction
-    const now = Date.now();
-    if (!this.lastPositionUpdate) {
-      this.lastPositionUpdate = now;
-    }
-
-    const timeSinceLastUpdate = now - this.lastPositionUpdate;
-    this.lastPositionUpdate = now;
-
-    // Update target position for interpolation
-    this.targetX = positionData.x || this.sprite.x;
-    this.targetY = positionData.y || this.sprite.y;
-    this.targetVelocityX = positionData.velocityX || 0;
-    this.targetVelocityY = positionData.velocityY || 0;
-
-    // Update direction and ground state
-    this.direction = positionData.direction || "idle";
-    this.isOnGround =
-      positionData.isOnGround !== undefined
-        ? positionData.isOnGround
-        : this.isOnGround;
-
-    // Calculate position difference for snap decision
-    const positionDiff = Math.sqrt(
-      Math.pow(this.targetX - this.sprite.x, 2) +
-        Math.pow(this.targetY - this.sprite.y, 2)
-    );
-
-    // If too much time has passed since last update OR large position difference, snap to position immediately
-    if (timeSinceLastUpdate > 200 || positionDiff > 100) {
-      console.log("📍 Snapping remote player to server position", {
-        timeSinceLastUpdate,
-        positionDiff,
-        from: { x: this.sprite.x, y: this.sprite.y },
-        to: { x: this.targetX, y: this.targetY },
-      });
-      this.sprite.x = this.targetX;
-      this.sprite.y = this.targetY;
-      this.sprite.body.setVelocity(this.targetVelocityX, this.targetVelocityY);
-    } else {
-      console.log("🎯 Smooth interpolation to target position", {
-        positionDiff,
-      });
-    }
+    this.positionBuffer.push({
+      timestamp: Date.now(),
+      x: positionData.x,
+      y: positionData.y,
+    });
   }
 
   showKickEffect() {
-    // Create a visual effect when remote player kicks
     const kickEffect = this.scene.add.circle(
       this.sprite.x,
       this.sprite.y,
@@ -292,30 +160,6 @@ export class RemotePlayer {
     });
   }
 
-  // Shooting methods (for compatibility with Player class)
-  isCurrentlyShooting() {
-    return this.isShooting;
-  }
-
-  canShoot() {
-    const now = Date.now();
-    return now - this.lastShootTime >= this.shootCooldown;
-  }
-
-  shoot() {
-    const now = Date.now();
-    if (now - this.lastShootTime < this.shootCooldown) return;
-
-    this.isShooting = true;
-    this.lastShootTime = now;
-
-    // Reset shooting state after a short delay
-    this.scene.time.delayedCall(200, () => {
-      this.isShooting = false;
-    });
-  }
-
-  // Get current position data for synchronization
   getPositionData() {
     return {
       x: this.sprite.x,
@@ -327,7 +171,6 @@ export class RemotePlayer {
     };
   }
 
-  // Reset player to starting position
   resetToPosition(x, y) {
     this.sprite.x = x;
     this.sprite.y = y;
@@ -341,62 +184,24 @@ export class RemotePlayer {
   }
 
   destroy() {
-    try {
-      console.log(`Destroying remote player ${this.playerKey}`);
-
-      // Clean up sprite and physics body
-      if (this.sprite && this.sprite.active) {
-        this.sprite.destroy();
-        this.sprite = null;
-      }
-
-      // Clear references
-      this.scene = null;
-      this.socketService = null;
-
-      console.log(`Remote player ${this.playerKey} destroyed successfully`);
-    } catch (error) {
-      console.error(`Error destroying remote player ${this.playerKey}:`, error);
-    }
-  }
-
-  // Add missing methods to match Player class interface
-  getKickPower() {
-    return GAME_CONFIG.PLAYER.BASE_KICK_POWER * this.attributes.kickPower;
-  }
-
-  getCurrentSpeed() {
-    return GAME_CONFIG.PLAYER.BASE_SPEED * this.attributes.speed;
-  }
-
-  getCurrentJumpVelocity() {
-    return GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY * this.attributes.jumpHeight;
-  }
-
-  getShootPower() {
-    return GAME_CONFIG.PLAYER.BASE_SHOOT_POWER * this.attributes.shootPower;
+    super.destroy();
+    this.socketService = null;
+    console.log(`Remote player ${this.playerKey} destroyed successfully`);
   }
 
   getDirection() {
     return this.direction;
   }
 
-  // Power-up related methods (stubs for compatibility)
   applyPowerup(type) {
-    // Remote players don't apply power-ups locally
     console.log(`Remote player power-up applied: ${type}`);
   }
 
   removePowerup(type) {
-    // Remote players don't remove power-ups locally
     console.log(`Remote player power-up removed: ${type}`);
   }
 
-  updatePowerupIndicator() {
-    // Remote players don't show power-up indicators locally
-  }
+  updatePowerupIndicator() {}
 
-  updatePowerupIndicatorPosition() {
-    // Remote players don't show power-up indicators locally
-  }
+  updatePowerupIndicatorPosition() {}
 }

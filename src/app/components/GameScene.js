@@ -2,23 +2,19 @@ import { GAME_CONFIG, PIXEL_SPRITE } from "./config.js";
 import { Player } from "./Player.js";
 import { RemotePlayer } from "./RemotePlayer.js";
 import { AIPlayer } from "./AIPlayer.js";
+import { UIManager } from "./UIManager.js";
+import { GameManager } from "./GameManager.js";
 
 export class GameScene extends Phaser.Scene {
   constructor() {
     super({ key: "GameScene" });
 
     // Game state
-    this.player1Score = 0;
-    this.player2Score = 0;
-    this.gameOver = false;
     this.goalCooldown = 0;
     this.pausedForGoal = false;
-    this.overlayGroup = null;
     this.isPaused = false;
 
     // Timer system
-    this.gameTime = GAME_CONFIG.GAME_DURATION;
-    this.timerEvent = null;
     this.gameStarted = false;
 
     // Power-up system
@@ -116,21 +112,6 @@ export class GameScene extends Phaser.Scene {
     this.load.audio("crowd", "/crowd.mp3");
   }
 
-  resetGameState() {
-    this.player1Score = 0;
-    this.player2Score = 0;
-    this.gameOver = false;
-    this.goalCooldown = 0;
-    this.pausedForGoal = false;
-    this.gameTime = GAME_CONFIG.GAME_DURATION;
-    this.timerEvent = null;
-    // For online games, keep gameStarted false until both players are ready
-    this.gameStarted = false;
-    this.powerups = [];
-    this.powerupSpawnTimer = null;
-    this.lastPlayerToTouchBall = null;
-  }
-
   create() {
     this.physics.world.setBounds(
       0,
@@ -180,14 +161,17 @@ export class GameScene extends Phaser.Scene {
       this
     );
 
+    this.uiManager = new UIManager(this);
+    this.gameManager = new GameManager(this);
+
     this.createPlayers();
     this.createBall();
-    this.createUI();
+    this.uiManager.createUI();
     this.createPlayerStatsDisplay();
 
     // Only start game systems for non-online modes
     if (this.gameMode !== "online") {
-      this.startGameTimer();
+      this.gameManager.startGameTimer();
       this.startPowerupSystem();
     }
 
@@ -413,21 +397,23 @@ export class GameScene extends Phaser.Scene {
   }
 
   handleMatchEnded(data) {
-    this.gameOver = true;
-    this.player1Score = data.finalScore?.player1 || 0;
-    this.player2Score = data.finalScore?.player2 || 0;
-    this.updateScoreDisplay();
-    this.handleGameEnd();
+    this.gameManager.gameOver = true;
+    this.gameManager.player1Score = data.finalScore?.player1 || 0;
+    this.gameManager.player2Score = data.finalScore?.player2 || 0;
+    const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
+    this.uiManager.updateScoreDisplay(this.gameManager.player1Score, this.gameManager.player2Score, player2Name);
+    this.gameManager.handleGameEnd();
   }
 
   handleGoalScored(data) {
     const scorer = data.scorer;
     if (scorer === "player1") {
-      this.player1Score++;
+      this.gameManager.player1Score++;
     } else if (scorer === "player2") {
-      this.player2Score++;
+      this.gameManager.player2Score++;
     }
-    this.updateScoreDisplay();
+    const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
+    this.uiManager.updateScoreDisplay(this.gameManager.player1Score, this.gameManager.player2Score, player2Name);
     this.showEnhancedGoalEffect();
     this.resetAfterGoal();
   }
@@ -520,195 +506,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // --- Overlay Creation Helper ---
-  showOverlay({ message, buttons }) {
-    if (this.overlayGroup && this.overlayGroup.children) {
-      this.overlayGroup.clear(true, true);
-    }
-    this.overlayGroup = null;
-    this.overlayGroup = this.add.group();
 
-    const overlay = this.add
-      .rectangle(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2,
-        GAME_CONFIG.CANVAS_WIDTH,
-        GAME_CONFIG.CANVAS_HEIGHT,
-        0x000000,
-        0.8
-      )
-      .setDepth(9999);
-    this.overlayGroup.add(overlay);
-
-    const msgText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2 - 80,
-        message,
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
-          fill: "#fff",
-          stroke: "#000",
-          strokeThickness: 4,
-          align: "center",
-        }
-      )
-      .setOrigin(0.5)
-      .setDepth(10000);
-    this.overlayGroup.add(msgText);
-
-    // Buttons in a column with margin
-    const buttonYStart = GAME_CONFIG.CANVAS_HEIGHT / 2 + 10;
-    const buttonSpacing = 80; // vertical space between buttons
-
-    buttons.forEach((btn, i) => {
-      const btnWidth = 260,
-        btnHeight = 60;
-      const btnX = GAME_CONFIG.CANVAS_WIDTH / 2;
-      const btnY = buttonYStart + i * buttonSpacing;
-
-      // Button background
-      const btnRect = this.add
-        .rectangle(btnX, btnY, btnWidth, btnHeight, 0x22223a, 1)
-        .setStrokeStyle(4, 0xfacc15)
-        .setDepth(10001)
-        .setInteractive({ useHandCursor: true });
-      this.overlayGroup.add(btnRect);
-
-      // Button text
-      const btnText = this.add
-        .text(btnX, btnY, btn.text, {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "20px",
-          fill: "#fde047",
-          align: "center",
-          wordWrap: { width: btnWidth - 32, useAdvancedWrap: true },
-          padding: { x: 8, y: 4 },
-        })
-        .setOrigin(0.5)
-        .setDepth(10002);
-      this.overlayGroup.add(btnText);
-      if (this.crowdSound) this.crowdSound.stop();
-      btnRect.on("pointerdown", btn.onClick);
-      btnText
-        .setInteractive({ useHandCursor: true })
-        .on("pointerdown", btn.onClick);
-    });
-  }
-
-  // --- End Game ---
-  handleGameEnd() {
-    this.gameOver = true;
-    if (this.timerEvent) this.timerEvent.destroy();
-    if (this.powerupSpawnTimer) this.powerupSpawnTimer.destroy();
-
-    this.powerups.forEach((powerup) => {
-      if (powerup.lifetimeTimer) powerup.lifetimeTimer.destroy();
-      if (powerup.sprite && powerup.sprite.active) powerup.sprite.destroy();
-      if (powerup.icon && powerup.icon.active) powerup.icon.destroy();
-    });
-    this.powerups = [];
-
-    let resultMessage = "";
-
-    if (this.player1Score > this.player2Score) {
-      resultMessage = "🏆 Player 1 Wins! 🎉";
-    } else if (this.player2Score > this.player1Score) {
-      const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
-      resultMessage = `🏆 ${player2Name} Wins! 🎉`;
-    } else {
-      resultMessage = "🤝 It's a Draw! 🤝";
-    }
-
-    this.showOverlay({
-      message: resultMessage,
-      buttons: [
-        {
-          text: "REMATCH",
-          onClick: () => {
-            if (this.overlayGroup && this.overlayGroup.children) {
-              this.overlayGroup.clear(true, true);
-            }
-            this.overlayGroup = null;
-            this.scene.restart({ gameMode: this.gameMode });
-          },
-        },
-        {
-          text: "BACK TO MAIN MENU",
-          onClick: () => {
-            if (this.overlayGroup && this.overlayGroup.children) {
-              this.overlayGroup.clear(true, true);
-            }
-            this.overlayGroup = null;
-            this.restartGame();
-          },
-        },
-      ],
-    });
-
-    if (this.ball && this.ball.body) this.ball.body.setVelocity(0, 0);
-    if (this.player1 && this.player1.sprite.body)
-      this.player1.sprite.body.setVelocity(0, 0);
-    if (this.player2 && this.player2.sprite.body)
-      this.player2.sprite.body.setVelocity(0, 0);
-  }
-
-  // --- Pause ---
-  handlePause() {
-    if (this.isPaused || this.gameOver) return;
-    this.isPaused = true;
-    if (this.timerEvent) this.timerEvent.paused = true;
-    this.physics.world.pause();
-
-    this.showOverlay({
-      message: "GAME PAUSED",
-      buttons: [
-        {
-          text: "RESUME",
-          onClick: () => {
-            if (this.overlayGroup) {
-              this.overlayGroup.clear(true, true);
-              this.overlayGroup = null;
-            }
-            this.isPaused = false;
-            this.physics.world.resume();
-            if (this.timerEvent) this.timerEvent.paused = false;
-            // Resume or replay crowd sound
-            if (this.crowdSound) {
-              if (this.crowdSound.isPlaying) {
-                this.crowdSound.resume();
-              } else {
-                this.crowdSound.play();
-              }
-            }
-          },
-        },
-        {
-          text: "REMATCH",
-          onClick: () => {
-            if (this.overlayGroup) {
-              this.overlayGroup.clear(true, true);
-              this.overlayGroup = null;
-            }
-            this.isPaused = false;
-            this.scene.restart({ gameMode: this.gameMode });
-          },
-        },
-        {
-          text: "BACK TO MAIN MENU",
-          onClick: () => {
-            if (this.overlayGroup) {
-              this.overlayGroup.clear(true, true);
-              this.overlayGroup = null;
-            }
-            this.isPaused = false;
-            this.restartGame();
-          },
-        },
-      ],
-    });
-  }
 
   /**
    * Handle player ready up functionality for online multiplayer
@@ -1551,183 +1349,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   handleGoal(scoringPlayer) {
-    if (this.gameOver || this.pausedForGoal || this.goalCooldown > 0) return;
-
-    // Update score
-    if (scoringPlayer === "player1") {
-      this.player1Score++;
-    } else {
-      this.player2Score++;
-    }
-    this.sound.play("goal", { volume: 0.7 });
-    // Enhanced goal effects
-    this.updateScoreDisplay();
-    this.showEnhancedGoalEffect();
-
-    // Send goal to server for online games - only if game is active
-    if (this.gameMode === "online" && this.socketService && this.gameStarted) {
-      console.log("Sending goal to server:", scoringPlayer);
-      this.socketService.scoreGoal(scoringPlayer);
-    } else if (
-      this.gameMode === "online" &&
-      this.socketService &&
-      !this.gameStarted
-    ) {
-      console.warn("Cannot send goal to server: game not started yet");
-    }
-
-    this.goalCooldown = GAME_CONFIG.GOAL_COOLDOWN;
-    this.pausedForGoal = true;
-
-    // Reset after goal
-    this.time.delayedCall(GAME_CONFIG.GOAL_PAUSE_DURATION, () => {
-      this.resetAfterGoal();
-    });
-  }
-
-  createUI() {
-    // Timer display (top center)
-    this.timerText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.UI.TIMER_Y,
-        "Time: 01:00",
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: GAME_CONFIG.UI.FONT_SIZES.TIMER,
-          fill: "#fff",
-          backgroundColor: "#222",
-          padding: { x: 16, y: 8 },
-          align: "center",
-          fontStyle: "bold",
-          borderRadius: 12,
-        }
-      )
-      .setOrigin(0.5, 0.5)
-      .setDepth(3000);
-
-    // Scoreboard (top center, below timer)
-    this.scoreText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.UI.SCORE_Y,
-        "Player 1: 0  -  Player 2: 0",
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: GAME_CONFIG.UI.FONT_SIZES.SCORE,
-          fill: "#fff",
-          backgroundColor: "#1976d2",
-          padding: { x: 18, y: 8 },
-          align: "center",
-          fontStyle: "bold",
-          borderRadius: 12,
-          stroke: "#000",
-          strokeThickness: 3,
-        }
-      )
-      .setOrigin(0.5, 0.5)
-      .setDepth(3000);
-
-    // Player position indicator for online games
-    if (this.gameMode === "online") {
-      this.positionText = this.add
-        .text(
-          GAME_CONFIG.CANVAS_WIDTH / 2,
-          GAME_CONFIG.UI.SCORE_Y + 60,
-          `You are: ${this.playerPosition || "Unknown"}`,
-          {
-            fontFamily: '"Press Start 2P"',
-            fontSize: "16px",
-            fill: "#ffff00",
-            backgroundColor: "#000",
-            padding: { x: 12, y: 6 },
-            align: "center",
-            fontStyle: "bold",
-            borderRadius: 8,
-            stroke: "#000",
-            strokeThickness: 2,
-          }
-        )
-        .setOrigin(0.5, 0.5)
-        .setDepth(3000);
-    }
-
-    // Goal effect text (centered, hidden by default)
-    this.goalEffectText = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2,
-        "GOAL!",
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: GAME_CONFIG.UI.FONT_SIZES.GOAL_EFFECT,
-          fill: "#ffff00",
-          stroke: "#000000",
-          strokeThickness: 4,
-          align: "center",
-          fontStyle: "bold",
-        }
-      )
-      .setOrigin(0.5, 0.5)
-      .setDepth(4000)
-      .setVisible(false);
-
-    // Win message (centered, hidden by default)
-    this.winText = this.add
-      .text(GAME_CONFIG.CANVAS_WIDTH / 2, 300, "", {
-        fontFamily: '"Press Start 2P"',
-        fontSize: GAME_CONFIG.UI.FONT_SIZES.WIN_MESSAGE,
-        fill: "#00ff00",
-        stroke: "#000000",
-        strokeThickness: 3,
-        align: "center",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5, 0.5)
-      .setDepth(4000)
-      .setVisible(false);
-
-    // Instructions bar (bottom center)
-    this.instructionsBar = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        900,
-        "Player 1 WASD to move | Player 2 Arrows to move, ESC to pause",
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "16px",
-          fill: "#fff",
-          backgroundColor: "#000",
-          padding: { x: 16, y: 8 },
-          align: "center",
-          borderRadius: 12,
-        }
-      )
-      .setOrigin(0.5, 0.5)
-      .setDepth(3000);
-
-    // Instructions bar (bottom center)
-    this.instructionsBar = this.add
-      .text(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        935,
-        "Power ups will show randomly on the sky, catch them with the ball! 🌟",
-        {
-          fontFamily: '"Press Start 2P"',
-          fontSize: "12px",
-          fill: "#fde047",
-          backgroundColor: "#222",
-          padding: { x: 16, y: 8 },
-          align: "center",
-          borderRadius: 12,
-        }
-      )
-      .setOrigin(0.5, 0.5)
-      .setDepth(3000);
-    // Restart key
-    // this.restartKey = this.input.keyboard.addKey(
-    //   Phaser.Input.Keyboard.KeyCodes.R
-    // );
+    this.gameManager.handleGoal(scoringPlayer);
   }
 
   startPowerupSystem() {
@@ -2052,216 +1674,7 @@ export class GameScene extends Phaser.Scene {
     this.player2StatsText.setText(p2Text);
   }
 
-  updateScoreDisplay() {
-    const player2Name = this.gameMode === "vsAI" ? "AI" : "Player 2";
 
-    const scoreString = `🔵 Player 1: ${this.player1Score}  -  ${player2Name}: ${this.player2Score} 🔴`;
-
-    this.scoreText.setText(scoreString);
-
-    // Add subtle glow effect to score
-
-    this.scoreText.setStyle({
-      fontSize: GAME_CONFIG.UI.FONT_SIZES.SCORE,
-
-      fill: "#ffffff",
-
-      backgroundColor: "#1976d2",
-
-      padding: { x: 18, y: 8 },
-
-      align: "center",
-
-      stroke: "#000",
-
-      strokeThickness: 3,
-    });
-  }
-
-  showEnhancedGoalEffect() {
-    // Enhanced GOAL text animation
-    this.goalEffectText.setVisible(true);
-    this.goalEffectText.setScale(0.1);
-    this.goalEffectText.setAlpha(1);
-
-    this.tweens.add({
-      targets: this.goalEffectText,
-      scaleX: 1.5,
-      scaleY: 1.5,
-      duration: 300,
-      ease: "Back.easeOut",
-      onComplete: () => {
-        this.tweens.add({
-          targets: this.goalEffectText,
-          scaleX: 1.0,
-          scaleY: 1.0,
-          alpha: 0,
-          duration: 700,
-          ease: "Power2",
-          onComplete: () => {
-            this.goalEffectText.setVisible(false);
-          },
-        });
-      },
-    });
-
-    // Enhanced flash effect
-    const flashRect = this.add.rectangle(
-      GAME_CONFIG.CANVAS_WIDTH / 2,
-      GAME_CONFIG.CANVAS_HEIGHT / 2,
-      GAME_CONFIG.CANVAS_WIDTH,
-      GAME_CONFIG.CANVAS_HEIGHT,
-      GAME_CONFIG.EFFECTS.GOAL_FLASH.COLOR,
-      GAME_CONFIG.EFFECTS.GOAL_FLASH.ALPHA
-    );
-    flashRect.setDepth(1500);
-
-    this.tweens.add({
-      targets: flashRect,
-      alpha: 0,
-      duration: GAME_CONFIG.EFFECTS.GOAL_FLASH.DURATION,
-      ease: "Power2",
-      onComplete: () => {
-        flashRect.destroy();
-      },
-    });
-
-    // Particle explosion at goal
-    const goalX = this.ball.x;
-    const goalY = this.ball.y;
-    this.createParticleEffect(goalX, goalY, GAME_CONFIG.COLORS.YELLOW, 20);
-  }
-
-  resetAfterGoal() {
-    this.ball.setPosition(
-      GAME_CONFIG.BALL.STARTING_POSITION.x,
-      GAME_CONFIG.BALL.STARTING_POSITION.y
-    );
-    this.ball.body.setVelocity(0, 0);
-
-    this.player1.sprite.setPosition(
-      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.x,
-      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER1.y
-    );
-    this.player1.sprite.body.setVelocity(0, 0);
-
-    this.player2.sprite.setPosition(
-      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.x,
-      GAME_CONFIG.PLAYER.STARTING_POSITIONS.PLAYER2.y
-    );
-    this.player2.sprite.body.setVelocity(0, 0);
-
-    this.pausedForGoal = false;
-    this.goalCooldown = 0;
-  }
-
-  resetBall() {
-    this.ball.setPosition(
-      GAME_CONFIG.BALL.STARTING_POSITION.x,
-      GAME_CONFIG.BALL.STARTING_POSITION.y
-    );
-    this.ball.body.setVelocity(0, 0);
-  }
-
-  checkBallBounds() {
-    if (
-      this.ball.y > GAME_CONFIG.CANVAS_HEIGHT + 50 ||
-      this.ball.x < -50 ||
-      this.ball.x > GAME_CONFIG.CANVAS_WIDTH + 50
-    ) {
-      this.resetBall();
-    }
-  }
-
-  restartGame() {
-    // Use the callback function to return to menu
-    if (typeof window !== "undefined" && window.__HEADBALL_RETURN_TO_MENU) {
-      window.__HEADBALL_RETURN_TO_MENU();
-    } else if (typeof window !== "undefined" && window.location) {
-      // Fallback to direct navigation
-      window.location.href = "/";
-    }
-  }
-
-  startGameTimer() {
-    // Don't start timer if game has already started
-    // if (!this.gameStarted) {
-    //   console.log("Timer not started - game already started");
-    //   return;
-    // }
-
-    this.gameStarted = true;
-    this.gameTime = GAME_CONFIG.GAME_DURATION;
-    this.updateTimerDisplay();
-
-    this.timerEvent = this.time.addEvent({
-      delay: 1000,
-      callback: this.updateTimer,
-      callbackScope: this,
-      loop: true,
-    });
-
-    console.log("Game timer started");
-  }
-  updateTimer() {
-    if (this.gameOver || this.pausedForGoal || this.isPaused) return;
-
-    this.gameTime--;
-    this.updateTimerDisplay();
-
-    if (this.gameTime <= 0) {
-      this.handleGameEnd();
-      return;
-    }
-
-    if (this.gameTime <= GAME_CONFIG.TIMER_THRESHOLDS.CRITICAL) {
-      this.timerText.setStyle({ fill: "#ff0000" });
-    } else if (this.gameTime <= GAME_CONFIG.TIMER_THRESHOLDS.WARNING) {
-      this.timerText.setStyle({ fill: "#ffff00" });
-    } else {
-      this.timerText.setStyle({ fill: "#ffffff" });
-    }
-  }
-
-  updateTimerDisplay() {
-    // Convert to integer to avoid floating point display
-    const gameTimeInt = Math.floor(this.gameTime);
-    const minutes = Math.floor(gameTimeInt / 60);
-    const seconds = gameTimeInt % 60;
-    const timeString = `⏱️ ${minutes.toString().padStart(2, "0")}:${seconds
-      .toString()
-      .padStart(2, "0")}`;
-
-    // Determine timer color and background based on time left
-    let timerColor = "#ffffff";
-    let backgroundColor = "#222222";
-    if (gameTimeInt <= 10) {
-      timerColor = "#ff0000";
-      backgroundColor = "#330000";
-      // Pulse effect for last 10 seconds
-      this.tweens.add({
-        targets: this.timerText,
-        scaleX: 1.1,
-        scaleY: 1.1,
-        duration: 500,
-        yoyo: true,
-        ease: "Power2",
-      });
-    } else if (gameTimeInt <= 30) {
-      timerColor = "#ffaa00";
-      backgroundColor = "#332200";
-    }
-
-    this.timerText.setStyle({
-      fontSize: GAME_CONFIG.UI.FONT_SIZES.TIMER,
-      fill: timerColor,
-      backgroundColor,
-      padding: { x: 16, y: 8 },
-      align: "center",
-    });
-
-    this.timerText.setText(timeString);
-  }
 
   setupControls() {
     this.cursors = this.input.keyboard.createCursorKeys();

@@ -1,23 +1,19 @@
 import { GAME_CONFIG, PIXEL_SPRITE } from "./config.js";
 import { Player } from "./Player.js";
 import { RemotePlayer } from "./RemotePlayer.js";
+import { UIManager } from "./UIManager.js";
+import { OnlineGameManager } from "./OnlineGameManager.js";
 
 export class OnlineGameScene extends Phaser.Scene {
   constructor() {
     super({ key: "OnlineGameScene" });
 
     // Game state
-    this.player1Score = 0;
-    this.player2Score = 0;
-    this.gameOver = false;
     this.goalCooldown = 0;
     this.pausedForGoal = false;
-    this.overlayGroup = null;
     this.isPaused = false;
 
     // Timer system
-    this.gameTime = GAME_CONFIG.GAME_DURATION;
-    this.timerEvent = null;
     this.gameStarted = false; // Always false until both players ready
 
     // Power-up system
@@ -117,9 +113,6 @@ export class OnlineGameScene extends Phaser.Scene {
   create() {
     console.log("OnlineGameScene create() called");
 
-    // First reset the state
-    this.resetGameState();
-
     // Set up physics world
     this.physics.world.setBounds(
       0,
@@ -169,7 +162,10 @@ export class OnlineGameScene extends Phaser.Scene {
     this.physics.add.collider(this.player1.sprite, this.player2.sprite);
 
     // Create UI elements
-    this.createUI();
+    this.uiManager = new UIManager(this);
+    this.uiManager.createUI();
+
+    this.onlineGameManager = new OnlineGameManager(this);
 
     // Create player stats display
     this.createPlayerStatsDisplay();
@@ -179,9 +175,6 @@ export class OnlineGameScene extends Phaser.Scene {
 
     // Initialize online multiplayer AFTER everything is created
     this.initializeOnlineMultiplayer();
-
-    // Expose debug methods for troubleshooting
-    this.exposeDebugMethods();
 
     // Notify that game is loaded
     this.notifyGameLoaded();
@@ -193,49 +186,6 @@ export class OnlineGameScene extends Phaser.Scene {
     console.log("Ball has physics body:", !!(this.ball && this.ball.body));
   }
 
-  resetGameState() {
-    console.log("Resetting OnlineGameScene game state");
-
-    // Reset ready states
-    this.isPlayerReady = false;
-    this.isOpponentReady = false;
-
-    // Reset game state
-    this.gameStarted = false; // Prevent premature game start
-    this.gameOver = false;
-    this.isPaused = false;
-    this.pausedForGoal = false;
-    this.player1Score = 0;
-    this.player2Score = 0;
-    this.gameTime = GAME_CONFIG.GAME_DURATION;
-    this.goalCooldown = 0;
-    this.powerups = [];
-    this.powerupSpawnTimer = null;
-    this.lastPlayerToTouchBall = null;
-
-    // Initialize rematch state tracking
-    this.rematchState = {
-      player1Requested: false,
-      player2Requested: false,
-      timeoutActive: false,
-    };
-
-    // Clear any existing timers
-    if (this.timerEvent) {
-      this.timerEvent.destroy();
-      this.timerEvent = null;
-    }
-
-    // Clear overlays
-    if (this.overlayGroup) {
-      this.overlayGroup.clear(true, true);
-      this.overlayGroup = null;
-    }
-    this.waitingStatusText = null;
-    this.readyStatusText = null;
-
-    console.log("OnlineGameScene state reset complete");
-  }
 
   initializeOnlineMultiplayer() {
     // Import the services dynamically to avoid SSR issues
@@ -506,17 +456,17 @@ export class OnlineGameScene extends Phaser.Scene {
   handleGameStarted(data) {
     console.log("🚀 Game started via socket:", data);
     console.log("Current state when game started:", {
-      gameStarted: this.gameStarted,
+      gameStarted: this.onlineGameManager.gameStarted,
       isPlayerReady: this.isPlayerReady,
-      hasOverlay: !!this.overlayGroup,
+      hasOverlay: !!this.uiManager.overlayGroup,
     });
 
     // CRITICAL: Clear any overlay immediately regardless of current state
     // This handles the case where player is still on loading/ready screen
-    if (this.overlayGroup) {
+    if (this.uiManager.overlayGroup) {
       console.log("Clearing overlay screens for game start");
-      this.overlayGroup.clear(true, true);
-      this.overlayGroup = null;
+      this.uiManager.overlayGroup.clear(true, true);
+      this.uiManager.overlayGroup = null;
     }
 
     // Clear waiting screen references
@@ -527,23 +477,15 @@ export class OnlineGameScene extends Phaser.Scene {
     this.isPlayerReady = false;
     this.isOpponentReady = false;
 
-    // Reset game state for new match
-    this.player1Score = 0;
-    this.player2Score = 0;
-    this.gameOver = false;
-    this.goalCooldown = 0;
-    this.pausedForGoal = false;
-    this.gameTime = data.matchDuration || GAME_CONFIG.GAME_DURATION;
-    this.gameStarted = true; // NOW the game can start!
-    this.powerups = [];
-    this.powerupSpawnTimer = null;
-    this.lastPlayerToTouchBall = null;
+    this.onlineGameManager.resetGameState();
+    this.onlineGameManager.gameStarted = true;
+    this.onlineGameManager.gameTime = data.matchDuration || GAME_CONFIG.GAME_DURATION;
 
-    console.log(`⏰ Initial game time set to: ${this.gameTime} seconds`);
+    console.log(`⏰ Initial game time set to: ${this.onlineGameManager.gameTime} seconds`);
     console.log("Game state reset, starting timer and powerups...");
 
     // Start the game systems
-    this.startGameTimer();
+    this.onlineGameManager.startGameTimer();
     this.startPowerupSystem();
 
     // Reset player positions
@@ -1381,15 +1323,12 @@ export class OnlineGameScene extends Phaser.Scene {
     );
   }
 
-  // Add placeholder methods that will be implemented
-  showLoadingScreen() {
+  createOverlay(children) {
     if (this.overlayGroup && this.overlayGroup.children) {
       this.overlayGroup.clear(true, true);
     }
-    this.overlayGroup = null;
     this.overlayGroup = this.add.group();
 
-    // Semi-transparent background
     const overlay = this.add
       .rectangle(
         GAME_CONFIG.CANVAS_WIDTH / 2,
@@ -1402,7 +1341,13 @@ export class OnlineGameScene extends Phaser.Scene {
       .setDepth(9999);
     this.overlayGroup.add(overlay);
 
-    // Loading text in bottom left
+    children.forEach(child => {
+        this.overlayGroup.add(child);
+    });
+  }
+
+  // Add placeholder methods that will be implemented
+  showLoadingScreen() {
     const loadingText = this.add
       .text(50, GAME_CONFIG.CANVAS_HEIGHT - 80, "Game Loading", {
         fontFamily: '"Press Start 2P"',
@@ -1413,7 +1358,6 @@ export class OnlineGameScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5)
       .setDepth(10000);
-    this.overlayGroup.add(loadingText);
 
     // Animated ball in bottom left
     const loadingBall = this.add
@@ -1469,26 +1413,6 @@ export class OnlineGameScene extends Phaser.Scene {
       console.log("Game already started, skipping ready button");
       return;
     }
-
-    // Clear loading screen
-    if (this.overlayGroup && this.overlayGroup.children) {
-      this.overlayGroup.clear(true, true);
-    }
-    this.overlayGroup = null;
-    this.overlayGroup = this.add.group();
-
-    // Semi-transparent background
-    const overlay = this.add
-      .rectangle(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2,
-        GAME_CONFIG.CANVAS_WIDTH,
-        GAME_CONFIG.CANVAS_HEIGHT,
-        0x000000,
-        0.7
-      )
-      .setDepth(9999);
-    this.overlayGroup.add(overlay);
 
     // Main title
     const titleText = this.add
@@ -1642,25 +1566,6 @@ export class OnlineGameScene extends Phaser.Scene {
       console.log("Game already started, skipping waiting screen");
       return;
     }
-
-    // Clear any existing overlay
-    if (this.overlayGroup) {
-      this.overlayGroup.clear(true, true);
-    }
-    this.overlayGroup = this.add.group();
-
-    // Semi-transparent background
-    const overlay = this.add
-      .rectangle(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2,
-        GAME_CONFIG.CANVAS_WIDTH,
-        GAME_CONFIG.CANVAS_HEIGHT,
-        0x000000,
-        0.85
-      )
-      .setDepth(9999);
-    this.overlayGroup.add(overlay);
 
     // Determine status message based on ready states
     let statusMessage = "Waiting for players...";
@@ -2356,59 +2261,27 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   handleMatchEnded(data) {
-    this.gameOver = true;
-    this.player1Score = data.finalScore?.player1 || 0;
-    this.player2Score = data.finalScore?.player2 || 0;
-    this.updateScoreDisplay();
-    this.handleGameEnd();
+    this.onlineGameManager.gameOver = true;
+    this.onlineGameManager.player1Score = data.finalScore?.player1 || 0;
+    this.onlineGameManager.player2Score = data.finalScore?.player2 || 0;
+    this.uiManager.updateScoreDisplay(this.onlineGameManager.player1Score, this.onlineGameManager.player2Score, "Player 2");
+    this.onlineGameManager.handleGameEnd();
   }
 
   handleGoalScored(data) {
     const scorer = data.scorer;
     if (scorer === "player1") {
-      this.player1Score++;
+      this.onlineGameManager.player1Score++;
     } else if (scorer === "player2") {
-      this.player2Score++;
+      this.onlineGameManager.player2Score++;
     }
-    this.updateScoreDisplay();
+    this.uiManager.updateScoreDisplay(this.onlineGameManager.player1Score, this.onlineGameManager.player2Score, "Player 2");
     this.showEnhancedGoalEffect();
     this.resetAfterGoal();
   }
 
   handleGoal(scoringPlayer) {
-    if (this.gameOver || this.pausedForGoal || this.goalCooldown > 0) return;
-
-    // Update score
-    if (scoringPlayer === "player1") {
-      this.player1Score++;
-    } else {
-      this.player2Score++;
-    }
-
-    // Enhanced goal effects
-    this.updateScoreDisplay();
-    this.showEnhancedGoalEffect();
-
-    // Send goal to server
-    if (this.socketService && this.gameStarted) {
-      console.log("Sending goal to server:", scoringPlayer);
-      this.socketService.scoreGoal(scoringPlayer);
-    }
-
-    this.goalCooldown = GAME_CONFIG.GOAL_COOLDOWN;
-    this.pausedForGoal = true;
-
-    // Add stop screen
-    this.showGoalPauseScreen();
-
-// Reset after Goal after a longer delay (for example 3 seconds)
-    this.time.delayedCall(3000, () => {
-      if (this.overlayGroup) {
-        this.overlayGroup.clear(true, true);
-        this.overlayGroup = null;
-      }
-      this.resetAfterGoal();
-    });
+    this.onlineGameManager.handleGoal(scoringPlayer);
   }
 
   resetAfterGoal() {
@@ -2494,26 +2367,6 @@ export class OnlineGameScene extends Phaser.Scene {
 
   // Show game end overlay with rematch options
   showGameEndOverlay(resultMessage, winner) {
-    // Clear any existing overlays
-    if (this.overlayGroup) {
-      this.overlayGroup.clear(true, true);
-      this.overlayGroup = null;
-    }
-
-    this.overlayGroup = this.add.group();
-
-    // Semi-transparent background
-    const overlay = this.add
-      .rectangle(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2,
-        GAME_CONFIG.CANVAS_WIDTH,
-        GAME_CONFIG.CANVAS_HEIGHT,
-        0x000000,
-        0.8
-      )
-      .setDepth(9999);
-    this.overlayGroup.add(overlay);
 
     // Game Over title
     const titleText = this.add
@@ -2750,26 +2603,6 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   showPauseOverlay() {
-    // Clear any existing overlays
-    if (this.overlayGroup) {
-      this.overlayGroup.clear(true, true);
-      this.overlayGroup = null;
-    }
-
-    this.overlayGroup = this.add.group();
-
-    // Semi-transparent background
-    const overlay = this.add
-      .rectangle(
-        GAME_CONFIG.CANVAS_WIDTH / 2,
-        GAME_CONFIG.CANVAS_HEIGHT / 2,
-        GAME_CONFIG.CANVAS_WIDTH,
-        GAME_CONFIG.CANVAS_HEIGHT,
-        0x000000,
-        0.8
-      )
-      .setDepth(9999);
-    this.overlayGroup.add(overlay);
 
     // Pause title
     const titleText = this.add
@@ -3156,144 +2989,24 @@ export class OnlineGameScene extends Phaser.Scene {
   }
 
   handleRemotePlayerPosition(data) {
-    // Only process position updates for the remote player (not our own position)
     if (data.position === this.playerPosition) {
-      console.log("Ignoring own position update");
       return;
     }
-
-    console.log("📥 RECEIVING remote player position update:", {
-      remotePosition: data.position,
-      localPosition: this.playerPosition,
-      remoteX: data.player.x,
-      remoteY: data.player.y,
-      remoteVelX: data.player.velocityX,
-      remoteVelY: data.player.velocityY,
-      timestamp: new Date().toISOString(),
-    });
-
     const remotePlayer = this.player2;
     if (remotePlayer && remotePlayer.handlePositionUpdate) {
-      // Before update
-      const beforePos = {
-        x: remotePlayer.sprite.x,
-        y: remotePlayer.sprite.y,
-      };
-
       remotePlayer.handlePositionUpdate(data.player);
-
-      // After update
-      const afterPos = {
-        x: remotePlayer.sprite.x,
-        y: remotePlayer.sprite.y,
-      };
-
-      console.log("✅ Remote player position updated:", {
-        before: beforePos,
-        after: afterPos,
-        changed: beforePos.x !== afterPos.x || beforePos.y !== afterPos.y,
-      });
-    } else {
-      console.warn(
-        "❌ Remote player not found or missing handlePositionUpdate method:",
-        {
-          remotePlayerExists: !!remotePlayer,
-          hasHandlePositionUpdate: !!(
-            remotePlayer && remotePlayer.handlePositionUpdate
-          ),
-          remotePlayerType: remotePlayer
-            ? remotePlayer.constructor.name
-            : "null",
-        }
-      );
-
-      // Fallback: directly update remote player position if method is missing
-      if (remotePlayer && remotePlayer.sprite && data.player) {
-        console.log("🔄 Using fallback position update");
-        const oldX = remotePlayer.sprite.x;
-        const oldY = remotePlayer.sprite.y;
-
-        remotePlayer.sprite.x = data.player.x;
-        remotePlayer.sprite.y = data.player.y;
-
-        if (
-          remotePlayer.sprite.body &&
-          data.player.velocityX !== undefined &&
-          data.player.velocityY !== undefined
-        ) {
-          remotePlayer.sprite.body.setVelocity(
-            data.player.velocityX,
-            data.player.velocityY
-          );
-        }
-
-        console.log("✅ Fallback update applied:", {
-          oldPos: { x: oldX, y: oldY },
-          newPos: { x: remotePlayer.sprite.x, y: remotePlayer.sprite.y },
-        });
-      }
     }
   }
 
   handleRemoteBallState(data) {
     if (this.isBallAuthority) {
-      console.log("🏀 Ball authority ignoring remote ball state");
       return;
     }
 
-    console.log("🏀 RECEIVING remote ball state:", {
-      remoteX: data.ball.x,
-      remoteY: data.ball.y,
-      remoteVelX: data.ball.velocityX,
-      remoteVelY: data.ball.velocityY,
-      localX: this.ball.x,
-      localY: this.ball.y,
-      timestamp: new Date().toISOString(),
-    });
-
     if (this.ball) {
-      // Store old position for comparison
-      const oldPos = { x: this.ball.x, y: this.ball.y };
-
-      // Improved ball state synchronization with smoother interpolation
-      const lerpFactor = 0.6; // How much to trust the received state vs current state
-
-      // Calculate position difference to detect significant changes
-      const positionDiff = Math.sqrt(
-        Math.pow(data.ball.x - this.ball.x, 2) +
-          Math.pow(data.ball.y - this.ball.y, 2)
-      );
-
-      // If the ball position is very different, snap to it immediately (teleport correction)
-      if (positionDiff > 100) {
-        console.log(
-          "🏀 Large ball position difference detected, snapping to server state:",
-          { positionDiff, from: oldPos, to: { x: data.ball.x, y: data.ball.y } }
-        );
-        this.ball.x = data.ball.x;
-        this.ball.y = data.ball.y;
-        this.ball.body.setVelocity(data.ball.velocityX, data.ball.velocityY);
-      } else {
-        // Otherwise, use smooth interpolation
-        this.ball.x = this.ball.x * (1 - lerpFactor) + data.ball.x * lerpFactor;
-        this.ball.y = this.ball.y * (1 - lerpFactor) + data.ball.y * lerpFactor;
-
-        // Interpolate velocity as well for smoother movement
-        const currentVelX = this.ball.body.velocity.x;
-        const currentVelY = this.ball.body.velocity.y;
-        const newVelX =
-          currentVelX * (1 - lerpFactor) + data.ball.velocityX * lerpFactor;
-        const newVelY =
-          currentVelY * (1 - lerpFactor) + data.ball.velocityY * lerpFactor;
-
-        this.ball.body.setVelocity(newVelX, newVelY);
-
-        console.log("🏀 Ball interpolated:", {
-          from: oldPos,
-          to: { x: this.ball.x, y: this.ball.y },
-          interpolated: positionDiff <= 100,
-        });
-      }
+      this.ball.x = data.ball.x;
+      this.ball.y = data.ball.y;
+      this.ball.body.setVelocity(data.ball.velocityX, data.ball.velocityY);
     }
   }
 
@@ -3442,17 +3155,17 @@ export class OnlineGameScene extends Phaser.Scene {
     if (!this.player1.sprite || !this.player1.sprite.body) return;
     if (this.gameOver) return;
 
-    // Allow both WASD and Arrow keys for all players
+    this.handleHorizontalInput();
+    this.handleJumpInput();
+    this.handleKickInput();
+
+    this.sendPlayerPosition();
+  }
+
+  handleHorizontalInput() {
     const leftKey = this.wasd.A.isDown || this.cursors.left.isDown;
     const rightKey = this.wasd.D.isDown || this.cursors.right.isDown;
-    const upKey = this.wasd.W.isDown || this.cursors.up.isDown;
-    const kickKey = this.space.isDown || this.enter.isDown || this.shift.isDown;
-
-    // Initialize speed
     const playerSpeed = GAME_CONFIG.PLAYER.BASE_SPEED * 2.0;
-    const jumpPower = Math.abs(GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY);
-
-    // Handle horizontal movement
     let horizontalVelocity = 0;
 
     if (leftKey) {
@@ -3462,11 +3175,9 @@ export class OnlineGameScene extends Phaser.Scene {
       }
       horizontalVelocity = -playerSpeed;
       this.player1.direction = "left";
-    } else {
-      if (this.leftPressed) {
-        this.leftPressed = false;
-        this.socketService.sendMoveLeft(false);
-      }
+    } else if (this.leftPressed) {
+      this.leftPressed = false;
+      this.socketService.sendMoveLeft(false);
     }
 
     if (rightKey) {
@@ -3476,24 +3187,24 @@ export class OnlineGameScene extends Phaser.Scene {
       }
       horizontalVelocity = playerSpeed;
       this.player1.direction = "right";
-    } else {
-      if (this.rightPressed) {
-        this.rightPressed = false;
-        this.socketService.sendMoveRight(false);
-      }
+    } else if (this.rightPressed) {
+      this.rightPressed = false;
+      this.socketService.sendMoveRight(false);
     }
 
-    // Apply horizontal movement
     if (horizontalVelocity === 0) {
       this.player1.direction = "idle";
-      // Apply friction
       const currentVelX = this.player1.sprite.body.velocity.x;
       this.player1.sprite.body.setVelocityX(currentVelX * 0.8);
     } else {
       this.player1.sprite.body.setVelocityX(horizontalVelocity);
     }
+  }
 
-    // Handle jump
+  handleJumpInput() {
+    const upKey = this.wasd.W.isDown || this.cursors.up.isDown;
+    const jumpPower = Math.abs(GAME_CONFIG.PLAYER.BASE_JUMP_VELOCITY);
+
     if (upKey && this.player1.isOnGround) {
       if (!this.jumpPressed) {
         this.jumpPressed = true;
@@ -3501,101 +3212,57 @@ export class OnlineGameScene extends Phaser.Scene {
         this.player1.sprite.body.setVelocityY(-jumpPower);
         this.player1.isOnGround = false;
       }
-    } else {
-      if (this.jumpPressed) {
-        this.jumpPressed = false;
-        this.socketService.sendJump(false);
-      }
+    } else if (this.jumpPressed) {
+      this.jumpPressed = false;
+      this.socketService.sendJump(false);
     }
+  }
 
-    // Handle kick
+  handleKickInput() {
+    const kickKey = this.space.isDown || this.enter.isDown || this.shift.isDown;
+
     if (kickKey) {
       if (!this.kickPressed) {
         this.kickPressed = true;
         this.socketService.sendKick(true);
         this.performKick();
       }
-    } else {
-      if (this.kickPressed) {
-        this.kickPressed = false;
-        this.socketService.sendKick(false);
-      }
+    } else if (this.kickPressed) {
+      this.kickPressed = false;
+      this.socketService.sendKick(false);
     }
-
-    // Send player position updates
-    this.sendPlayerPosition();
   }
 
   sendPlayerPosition() {
     if (!this.socketService || !this.player1 || !this.player1.sprite) {
-      console.warn("Cannot send player position - missing requirements:", {
-        hasSocketService: !!this.socketService,
-        hasPlayer1: !!this.player1,
-        hasPlayer1Sprite: !!(this.player1 && this.player1.sprite),
-      });
       return;
-    }
-
-    // Initialize lastSentPosition if not set
-    if (!this.lastSentPosition) {
-      this.lastSentPosition = { x: 0, y: 0, time: 0 };
     }
 
     const now = Date.now();
-
-    // Reduce throttle time for smoother movement (max 30 updates per second = 33ms)
-    if (now - this.lastSentPosition.time < 33) {
+    if (now - this.lastPositionSendTime < 50) { // 20 updates per second
       return;
     }
 
-    // Send position if changed significantly OR if enough time has passed
     const dx = Math.abs(this.player1.sprite.x - this.lastSentPosition.x);
     const dy = Math.abs(this.player1.sprite.y - this.lastSentPosition.y);
-    const timeSinceLastSend = now - this.lastSentPosition.time;
 
-    // Reduced threshold for more responsive movement (was 2, now 1)
-    const shouldSendPosition = dx > 1 || dy > 1 || timeSinceLastSend > 100;
-
-    if (shouldSendPosition) {
-      // CRITICAL FIX: Use the actual player position from the player object
-      const actualPlayerPosition =
-        this.player1.playerPosition || this.playerPosition;
-
+    if (dx > this.positionSendThreshold || dy > this.positionSendThreshold) {
       const positionData = {
-        position: actualPlayerPosition, // Use the correct position
+        position: this.playerPosition,
         player: {
           x: this.player1.sprite.x,
           y: this.player1.sprite.y,
-          velocityX: this.player1.sprite.body
-            ? this.player1.sprite.body.velocity.x
-            : 0,
-          velocityY: this.player1.sprite.body
-            ? this.player1.sprite.body.velocity.y
-            : 0,
-          direction: this.player1.direction ? this.player1.direction : "idle",
-          isOnGround: this.player1.isOnGround || false,
+          velocityX: this.player1.sprite.body.velocity.x,
+          velocityY: this.player1.sprite.body.velocity.y,
+          direction: this.player1.direction,
+          isOnGround: this.player1.isOnGround,
         },
       };
 
-      // Only log position sends occasionally to reduce console spam
-      const logPosition = Math.random() < 0.01; // Log 1% of position sends
-      if (logPosition) {
-        console.log("📡 SENDING player position:", {
-          position: positionData.position,
-          x: positionData.player.x,
-          y: positionData.player.y,
-          dx: dx,
-          dy: dy,
-          timeSinceLastSend: timeSinceLastSend,
-        });
-      }
-
-      // Use socketService method directly
       this.socketService.sendPlayerPosition(positionData);
-
       this.lastSentPosition.x = this.player1.sprite.x;
       this.lastSentPosition.y = this.player1.sprite.y;
-      this.lastSentPosition.time = now;
+      this.lastPositionSendTime = now;
     }
   }
 
@@ -4190,532 +3857,6 @@ export class OnlineGameScene extends Phaser.Scene {
       playerPosition: this.playerPosition,
       roomState: this.socketService?.getCurrentRoomState(),
     };
-  }
-
-  debugReadySystem() {
-    const readyStates = {
-      // Local game state
-      gameStarted: this.gameStarted,
-      gameOver: this.gameOver,
-      isPaused: this.isPaused,
-      pausedForGoal: this.pausedForGoal,
-
-      // Ready states
-      isPlayerReady: this.isPlayerReady,
-      isOpponentReady: this.isOpponentReady,
-      bothPlayersReady: this.isPlayerReady && this.isOpponentReady,
-
-      // Player position
-      playerPosition: this.playerPosition,
-
-      // UI state
-      hasOverlay: !!this.overlayGroup,
-      overlayChildrenCount: this.overlayGroup
-        ? this.overlayGroup.children.length
-        : 0,
-      hasWaitingText: !!this.waitingStatusText,
-      hasReadyStatusText: !!this.readyStatusText,
-
-      // Socket state
-      socketConnected: this.socketService
-        ? this.socketService.isSocketConnected()
-        : false,
-      roomJoined: this.socketService
-        ? this.socketService.isRoomJoined()
-        : false,
-      playersInRoom: this.socketService
-        ? this.socketService.getPlayersInRoom()
-        : 0,
-      currentRoomId: this.socketService
-        ? this.socketService.getCurrentRoomId()
-        : null,
-
-      // Timing information
-      timestamp: new Date().toISOString(),
-
-      // Current UI text content
-      waitingTextContent: this.waitingStatusText
-        ? this.waitingStatusText.text
-        : null,
-      readyStatusTextContent: this.readyStatusText
-        ? this.readyStatusText.text
-        : null,
-    };
-
-    console.log("=== READY SYSTEM DEBUG INFO ===");
-    console.table(readyStates);
-    console.log(
-      "Room state:",
-      this.socketService
-        ? this.socketService.getCurrentRoomState()
-        : "No socket service"
-    );
-    console.log("================================");
-
-    return readyStates;
-  }
-
-  // Enhanced method to force clear ready system (for debugging)
-  forceResetReadySystem() {
-    console.log("=== FORCE RESETTING READY SYSTEM ===");
-
-    // Reset all ready states
-    this.isPlayerReady = false;
-    this.isOpponentReady = false;
-
-    // Clear all UI
-    if (this.overlayGroup) {
-      this.overlayGroup.clear(true, true);
-      this.overlayGroup = null;
-    }
-
-    this.waitingStatusText = null;
-    this.readyStatusText = null;
-
-    // Reset game state flags
-    this.gameStarted = false;
-    this.gameOver = false;
-    this.pausedForGoal = false;
-
-    console.log("Ready system reset complete");
-    console.log("New state:", this.debugReadySystem());
-
-    // Show ready button if appropriate
-    if (!this.gameStarted) {
-      this.time.delayedCall(1000, () => {
-        this.showReadyButton();
-      });
-    }
-  }
-
-  // Expose debug method globally
-  exposeDebugMethods() {
-    if (typeof window !== "undefined") {
-      // Enhanced debug methods for troubleshooting
-      window.__HEADBALL_DEBUG_READY = () => this.debugReadySystem();
-      window.__HEADBALL_FORCE_RESET_READY = () => this.forceResetReadySystem();
-      window.__HEADBALL_FORCE_GAME_START = () => {
-        console.log("Force starting game...");
-        this.handleGameStarted({
-          forcedStart: true,
-          timestamp: Date.now(),
-        });
-      };
-      window.__HEADBALL_GET_GAME_STATE = () => ({
-        gameStarted: this.gameStarted,
-        isPlayerReady: this.isPlayerReady,
-        isOpponentReady: this.isOpponentReady,
-        playerPosition: this.playerPosition,
-        hasOverlay: !!this.overlayGroup,
-        socketConnected: this.socketService?.isSocketConnected(),
-        roomJoined: this.socketService?.isRoomJoined(),
-        playersInRoom: this.socketService?.getPlayersInRoom(),
-      });
-      window.__HEADBALL_FORCE_READY = () => {
-        console.log("Force ready up...");
-        this.handleReady();
-      };
-      window.__HEADBALL_FORCE_CANCEL_READY = () => {
-        console.log("Force cancel ready...");
-        this.cancelReady();
-      };
-
-      // NEW: Monitor ready events to detect the bug
-      window.__HEADBALL_MONITOR_READY_EVENTS = () => {
-        console.log("🔍 Setting up ready event monitoring...");
-        const originalHandlePlayerReady = this.handlePlayerReady.bind(this);
-        this.handlePlayerReady = (data) => {
-          console.log("🔔 READY EVENT INTERCEPTED:", {
-            eventData: data,
-            currentLocalPosition: this.playerPosition,
-            currentLocalReady: this.isPlayerReady,
-            currentOpponentReady: this.isOpponentReady,
-            timestamp: new Date().toISOString(),
-          });
-
-          // Call original method
-          const result = originalHandlePlayerReady(data);
-
-          console.log("🔔 AFTER PROCESSING READY EVENT:", {
-            newLocalReady: this.isPlayerReady,
-            newOpponentReady: this.isOpponentReady,
-            bothReady: this.isPlayerReady && this.isOpponentReady,
-          });
-
-          return result;
-        };
-        console.log("✅ Ready event monitoring enabled");
-      };
-
-      // NEW: Debug timer system
-      window.__HEADBALL_DEBUG_TIMER = () => {
-        console.log("=== TIMER SYSTEM DEBUG ===");
-        console.log("Game time:", this.gameTime);
-        console.log("Game started:", this.gameStarted);
-        console.log("Game over:", this.gameOver);
-        console.log("Has local timer event:", !!this.timerEvent);
-        console.log("Timer mode: Server-controlled");
-        console.log(
-          "Socket connected:",
-          this.socketService?.isSocketConnected()
-        );
-        console.log("==========================");
-
-        return {
-          gameTime: this.gameTime,
-          gameStarted: this.gameStarted,
-          gameOver: this.gameOver,
-          hasLocalTimer: !!this.timerEvent,
-          timerMode: "server-controlled",
-          socketConnected: this.socketService?.isSocketConnected(),
-        };
-      };
-
-      console.log("🎮 Debug methods exposed to window:");
-      console.log(
-        "  __HEADBALL_DEBUG_READY() - Show detailed ready system state"
-      );
-      console.log(
-        "  __HEADBALL_FORCE_RESET_READY() - Reset ready system completely"
-      );
-      console.log("  __HEADBALL_FORCE_GAME_START() - Force start the game");
-      console.log("  __HEADBALL_GET_GAME_STATE() - Get current game state");
-      console.log("  __HEADBALL_FORCE_READY() - Force ready up");
-      console.log("  __HEADBALL_FORCE_CANCEL_READY() - Force cancel ready");
-      console.log(
-        "  __HEADBALL_MONITOR_READY_EVENTS() - Monitor ready events for debugging"
-      );
-      console.log("  __HEADBALL_DEBUG_TIMER() - Debug timer system state");
-
-      // NEW: Debug position synchronization
-      window.__HEADBALL_DEBUG_POSITIONS = () => {
-        console.log("=== POSITION SYNCHRONIZATION DEBUG ===");
-        console.log("Player Position:", this.playerPosition);
-        console.log("Ball Authority:", this.isBallAuthority);
-        console.log("Game Started:", this.gameStarted);
-
-        if (this.player1 && this.player1.sprite) {
-          console.log("Local Player (player1):", {
-            x: this.player1.sprite.x,
-            y: this.player1.sprite.y,
-            velocityX: this.player1.sprite.body?.velocity.x,
-            velocityY: this.player1.sprite.body?.velocity.y,
-            isOnGround: this.player1.isOnGround,
-            direction: this.player1.direction,
-          });
-        }
-
-        if (this.player2 && this.player2.sprite) {
-          console.log("Remote Player (player2):", {
-            x: this.player2.sprite.x,
-            y: this.player2.sprite.y,
-            velocityX: this.player2.sprite.body?.velocity.x,
-            velocityY: this.player2.sprite.body?.velocity.y,
-            isRemotePlayer: this.player2 instanceof RemotePlayer,
-            hasHandlePositionUpdate:
-              typeof this.player2.handlePositionUpdate === "function",
-          });
-        }
-
-        if (this.ball) {
-          console.log("Ball:", {
-            x: this.ball.x,
-            y: this.ball.y,
-            velocityX: this.ball.body?.velocity.x,
-            velocityY: this.ball.body?.velocity.y,
-            hasPhysicsBody: !!this.ball.body,
-          });
-        }
-
-        console.log("Socket Service:", {
-          connected: this.socketService?.isSocketConnected(),
-          roomJoined: this.socketService?.isRoomJoined(),
-        });
-
-        console.log("==========================================");
-
-        return {
-          playerPosition: this.playerPosition,
-          isBallAuthority: this.isBallAuthority,
-          gameStarted: this.gameStarted,
-          localPlayer:
-            this.player1 && this.player1.sprite
-              ? {
-                  x: this.player1.sprite.x,
-                  y: this.player1.sprite.y,
-                  hasPhysicsBody: !!this.player1.sprite.body,
-                }
-              : null,
-          remotePlayer:
-            this.player2 && this.player2.sprite
-              ? {
-                  x: this.player2.sprite.x,
-                  y: this.player2.sprite.y,
-                  hasPhysicsBody: !!this.player2.sprite.body,
-                  isRemotePlayer:
-                    this.player2.constructor.name === "RemotePlayer",
-                }
-              : null,
-          ball: this.ball
-            ? {
-                x: this.ball.x,
-                y: this.ball.y,
-                hasPhysicsBody: !!this.ball.body,
-              }
-            : null,
-        };
-      };
-
-      console.log(
-        "  __HEADBALL_DEBUG_POSITIONS() - Debug position synchronization"
-      );
-
-      // NEW: Auto-monitor system for troubleshooting
-      window.__HEADBALL_START_MONITORING = () => {
-        if (window.__HEADBALL_MONITOR_INTERVAL) {
-          clearInterval(window.__HEADBALL_MONITOR_INTERVAL);
-        }
-
-        console.log("🔍 Starting real-time monitoring...");
-        let lastPositions = {};
-
-        window.__HEADBALL_MONITOR_INTERVAL = setInterval(() => {
-          const current = window.__HEADBALL_DEBUG_POSITIONS();
-
-          // Check if positions are changing
-          if (lastPositions.localPlayer && current.localPlayer) {
-            const localMoved =
-              Math.abs(current.localPlayer.x - lastPositions.localPlayer.x) >
-                1 ||
-              Math.abs(current.localPlayer.y - lastPositions.localPlayer.y) > 1;
-
-            if (localMoved) {
-              console.log("✅ Local player is moving");
-            } else {
-              console.log("⚠️ Local player not moving");
-            }
-          }
-
-          if (lastPositions.remotePlayer && current.remotePlayer) {
-            const remoteMoved =
-              Math.abs(current.remotePlayer.x - lastPositions.remotePlayer.x) >
-                1 ||
-              Math.abs(current.remotePlayer.y - lastPositions.remotePlayer.y) >
-                1;
-
-            if (remoteMoved) {
-              console.log("✅ Remote player is moving");
-            } else {
-              console.log("❌ Remote player NOT moving");
-            }
-          }
-
-          if (current.ball && lastPositions.ball) {
-            const ballMoved =
-              Math.abs(current.ball.x - lastPositions.ball.x) > 1 ||
-              Math.abs(current.ball.y - lastPositions.ball.y) > 1;
-
-            if (ballMoved) {
-              console.log("✅ Ball is moving");
-            } else {
-              console.log("⚠️ Ball is static");
-            }
-          }
-
-          lastPositions = current;
-        }, 2000); // Check every 2 seconds
-
-        console.log(
-          "✅ Monitoring started. Call __HEADBALL_STOP_MONITORING() to stop."
-        );
-      };
-
-      window.__HEADBALL_STOP_MONITORING = () => {
-        if (window.__HEADBALL_MONITOR_INTERVAL) {
-          clearInterval(window.__HEADBALL_MONITOR_INTERVAL);
-          window.__HEADBALL_MONITOR_INTERVAL = null;
-          console.log("🛑 Monitoring stopped");
-        }
-      };
-
-      console.log(
-        "  __HEADBALL_START_MONITORING() - Start real-time monitoring"
-      );
-      console.log("  __HEADBALL_STOP_MONITORING() - Stop monitoring");
-
-      // NEW: Comprehensive diagnostics for movement issues
-      window.__HEADBALL_DIAGNOSE_MOVEMENT = () => {
-        console.log("=== MOVEMENT DIAGNOSTICS ===");
-
-        // Check socket connectivity
-        console.log("Socket Status:", {
-          connected: this.socketService?.isSocketConnected(),
-          roomJoined: this.socketService?.isRoomJoined(),
-          hasSocket: !!this.socketService,
-          socketId: this.socketService?.getSocket()?.id,
-        });
-
-        // Check player positions
-        console.log("Player Positions:", {
-          localPosition: this.playerPosition,
-          localPlayer: this.player1
-            ? {
-                x: this.player1.sprite.x,
-                y: this.player1.sprite.y,
-                exists: true,
-              }
-            : { exists: false },
-          remotePlayer: this.player2
-            ? {
-                x: this.player2.sprite.x,
-                y: this.player2.sprite.y,
-                exists: true,
-                type: this.player2.constructor.name,
-              }
-            : { exists: false },
-        });
-
-        // Check ball authority
-        console.log("Ball Authority:", {
-          isBallAuthority: this.isBallAuthority,
-          ballExists: !!this.ball,
-          ballPosition: this.ball ? { x: this.ball.x, y: this.ball.y } : null,
-        });
-
-        // Check game state
-        console.log("Game State:", {
-          gameStarted: this.gameStarted,
-          gameOver: this.gameOver,
-          isPaused: this.isPaused,
-        });
-
-        // Check backend player position validation
-        if (this.socketService?.getSocket()) {
-          console.log("Backend Validation Check:", {
-            frontendPosition: this.playerPosition,
-            socketId: this.socketService.getSocket().id,
-            roomState: this.socketService.getCurrentRoomState(),
-          });
-        }
-
-        console.log("==========================");
-
-        return {
-          socketConnected: this.socketService?.isSocketConnected(),
-          gameStarted: this.gameStarted,
-          isBallAuthority: this.isBallAuthority,
-          playerPosition: this.playerPosition,
-          hasPlayers: { local: !!this.player1, remote: !!this.player2 },
-          hasBall: !!this.ball,
-          positionMismatchRisk:
-            !this.playerPosition ||
-            (this.playerPosition !== "player1" &&
-              this.playerPosition !== "player2"),
-        };
-      };
-
-      // NEW: Test movement functionality
-      window.__HEADBALL_TEST_MOVEMENT = () => {
-        console.log("=== TESTING MOVEMENT ===");
-
-        if (!this.gameStarted) {
-          console.warn("Game not started - movement won't work");
-          return;
-        }
-
-        if (!this.socketService?.isSocketConnected()) {
-          console.warn("Socket not connected - movement sync won't work");
-          return;
-        }
-
-        console.log("Sending test movement...");
-        console.log("Current position being sent:", this.playerPosition);
-
-        // Send a test movement
-        this.socketService.sendMoveRight(true);
-        setTimeout(() => {
-          this.socketService.sendMoveRight(false);
-        }, 500);
-
-        console.log("Test movement sent - check if remote player moves");
-      };
-
-      // NEW: Test ball interaction
-      window.__HEADBALL_TEST_BALL = () => {
-        console.log("=== TESTING BALL INTERACTION ===");
-
-        if (!this.isBallAuthority) {
-          console.warn("Not ball authority - cannot test ball physics");
-          return;
-        }
-
-        if (!this.ball) {
-          console.warn("Ball not found");
-          return;
-        }
-
-        console.log("Adding test velocity to ball...");
-        this.ball.body.setVelocity(200, -300);
-        console.log("Ball should move and sync to other player");
-      };
-
-      // NEW: Check position assignment
-      window.__HEADBALL_CHECK_POSITIONS = () => {
-        console.log("=== POSITION ASSIGNMENT CHECK ===");
-
-        const roomState = this.socketService?.getCurrentRoomState();
-        const socketId = this.socketService?.getSocket()?.id;
-
-        console.log("Frontend State:", {
-          playerPosition: this.playerPosition,
-          isBallAuthority: this.isBallAuthority,
-          socketId: socketId,
-        });
-
-        console.log("Room State:", roomState);
-
-        console.log("Global Variables:", {
-          windowPlayerPosition:
-            typeof window !== "undefined"
-              ? window.__HEADBALL_PLAYER_POSITION
-              : "undefined",
-          windowBallAuthority:
-            typeof window !== "undefined"
-              ? window.__HEADBALL_IS_BALL_AUTHORITY
-              : "undefined",
-        });
-
-        const isValid =
-          this.playerPosition &&
-          (this.playerPosition === "player1" ||
-            this.playerPosition === "player2");
-        console.log("Position Valid:", isValid);
-
-        if (!isValid) {
-          console.warn("❌ INVALID POSITION - This will cause sync issues!");
-        } else {
-          console.log("✅ Position assignment looks correct");
-        }
-
-        console.log("================================");
-
-        return {
-          valid: isValid,
-          playerPosition: this.playerPosition,
-          isBallAuthority: this.isBallAuthority,
-          socketId: socketId,
-        };
-      };
-
-      console.log(
-        "  __HEADBALL_DIAGNOSE_MOVEMENT() - Diagnose movement issues"
-      );
-      console.log("  __HEADBALL_TEST_MOVEMENT() - Test movement sync");
-      console.log(
-        "  __HEADBALL_TEST_BALL() - Test ball sync (ball authority only)"
-      );
-      console.log("  __HEADBALL_CHECK_POSITIONS() - Check position assignment");
-    }
   }
 
   handleGameEnded(data) {

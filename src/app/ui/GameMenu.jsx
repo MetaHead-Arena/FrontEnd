@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import PixelButton from "./PixelButton";
 import PlayerSelect from "./PlayerSelect";
 import MetaheadTitle from "./MetaheadTitle";
+import MatchmakingModal from "./MatchmakingModal";
 import ChestRedeemModal from "./ChestRedeemModal";
 import LevelProgressBar from "./LevelProgressBar";
 import CoinDisplay from "./CoinDisplay";
@@ -24,7 +25,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const chainId = useChainId();
   const [selectedPlayer, setSelectedPlayer] = useState(0);
   const [showChestModal, setShowChestModal] = useState(false);
-  const [showLoader, setShowLoader] = useState(false);
   const [playerCreated, setPlayerCreated] = useState(false);
   const [isMatchmaking, setIsMatchmaking] = useState(false);
   const [roomJoined, setRoomJoined] = useState(false);
@@ -34,7 +34,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
   const [showCoinTransferModal, setShowCoinTransferModal] = useState(false);
   const [showDebugPanel, setShowDebugPanel] = useState(false);
   const [connectionHealth, setConnectionHealth] = useState(null);
-  const [gameLoading, setGameLoading] = useState(false);
   const readyPlayersRef = useRef(new Set());
 
   // Store onSelectMode in a ref to avoid dependency issues
@@ -352,17 +351,6 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
     socketService.on("error", onError);
     return () => socketService.off("error", onError);
   }, [selectedPlayer]);
-
-  useEffect(() => {
-    function onRoomJoined(data) {
-      setGameLoading(false); // Hide the loading overlay
-      // Reset ready state when joining a new room
-      setBothPlayersReady(false);
-      readyPlayersRef.current.clear();
-    }
-    socketService.on("room-joined", onRoomJoined);
-    return () => socketService.off("room-joined", onRoomJoined);
-  }, []);
 
   useEffect(() => {
     function onLeftRoom(data) {
@@ -686,157 +674,14 @@ const GameMenu = ({ onSelectMode, onMarketplace }) => {
       {showChestModal && (
         <ChestRedeemModal onClose={() => setShowChestModal(false)} />
       )}
-      {/* Matchmaking Modal */}
-      {(isMatchmaking ||
-        roomJoined ||
-        waitingForPlayers ||
-        bothPlayersReady) && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.9)",
-            zIndex: 10000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            style={{
-              background: "#1e293b",
-              border: "4px solid #ffd600",
-              borderRadius: "8px",
-              padding: "32px",
-              textAlign: "center",
-              maxWidth: "500px",
-              width: "90%",
-            }}
-          >
-            <h2
-              style={{
-                color: "#fde047",
-                fontFamily: '"Press Start 2P", monospace',
-                fontSize: "24px",
-                marginBottom: "20px",
-                textShadow: "2px 2px 0 #000",
-              }}
-            >
-              {isMatchmaking && "FINDING MATCH..."}
-              {roomJoined &&
-                !waitingForPlayers &&
-                playersInRoom < 2 &&
-                "ROOM JOINED!"}
-              {roomJoined &&
-                playersInRoom >= 2 &&
-                !bothPlayersReady &&
-                "LOADING GAME..."}
-              {waitingForPlayers && "WAITING FOR PLAYERS"}
-              {bothPlayersReady && "STARTING GAME..."}
-            </h2>
-
-            <div
-              style={{
-                color: "#fff",
-                fontFamily: '"Press Start 2P", monospace',
-                fontSize: "16px",
-                marginBottom: "20px",
-                lineHeight: "1.5",
-              }}
-            >
-              {isMatchmaking && (
-                <>
-                  <div style={{ marginBottom: "10px" }}>
-                    🔍 Searching for opponents...
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-                    Please wait while we find a match
-                  </div>
-                </>
-              )}
-
-              {roomJoined && (
-                <>
-                  <div style={{ marginBottom: "10px" }}>
-                    🎮 Players in room: {playersInRoom}/2
-                  </div>
-                  {waitingForPlayers && playersInRoom < 2 && (
-                    <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-                      Waiting for another player to join...
-                    </div>
-                  )}
-                  {playersInRoom >= 2 && !bothPlayersReady && (
-                    <>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          color: "#10b981",
-                          marginBottom: "10px",
-                        }}
-                      >
-                        Both players joined! Loading game...
-                      </div>
-                    </>
-                  )}
-                  {bothPlayersReady && (
-                    <div style={{ fontSize: "12px", color: "#10b981" }}>
-                      Both players ready! Starting game...
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* Loading animation - only show during matchmaking or when both players are ready */}
-            {(isMatchmaking || bothPlayersReady) && (
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "center",
-                  marginBottom: "20px",
-                }}
-              >
-                <div
-                  style={{
-                    width: "40px",
-                    height: "40px",
-                    border: "4px solid #374151",
-                    borderTop: "4px solid #fde047",
-                    borderRadius: "50%",
-                    animation: "spin 1s linear infinite",
-                  }}
-                />
-              </div>
-            )}
-
-            {/* Cancel button - only show during matchmaking */}
-            {isMatchmaking && (
-              <PixelButton
-                variant="menu"
-                size="large"
-                onClick={handleCancelMatchmaking}
-                style={{
-                  backgroundColor: "#dc2626",
-                  borderColor: "#991b1b",
-                }}
-              >
-                CANCEL
-              </PixelButton>
-            )}
-          </div>
-        </div>
-      )}
-      {/* CSS for loading animation */}
-      <style jsx>{`
-        @keyframes spin {
-          0% {
-            transform: rotate(0deg);
-          }
-          100% {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
+      <MatchmakingModal
+        isMatchmaking={isMatchmaking}
+        roomJoined={roomJoined}
+        waitingForPlayers={waitingForPlayers}
+        bothPlayersReady={bothPlayersReady}
+        playersInRoom={playersInRoom}
+        onCancel={handleCancelMatchmaking}
+      />
     </div>
   );
 };

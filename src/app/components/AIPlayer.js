@@ -1,10 +1,9 @@
-import { Player } from "./Player.js";
+import { BasePlayer } from "./BasePlayer.js";
 import { GAME_CONFIG } from "./config.js";
 
-export class AIPlayer extends Player {
+export class AIPlayer extends BasePlayer {
   constructor(scene, x, y, playerKey) {
-    // Use "ai-head" as the sprite key for the AI image
-    super(scene, x, y, playerKey, "ai", "ai-head");
+    super(scene, x, y, playerKey, "ai-head");
 
     // AI-specific properties
     this.reactionTime = 100;
@@ -28,6 +27,10 @@ export class AIPlayer extends Player {
       this.lastDecisionTime = currentTime;
     }
     this.makeContinuousAdjustments();
+  }
+
+  destroy() {
+    super.destroy();
   }
 
   executeAIAction() {
