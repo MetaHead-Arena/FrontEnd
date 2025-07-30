@@ -1,4 +1,5 @@
 import { API_ENDPOINTS, apiClient, tokenManager } from "../app/lib/api";
+import { logger } from "../app/lib/logger";
 import {
   NonceResponse,
   AuthResponse,
@@ -7,42 +8,85 @@ import {
 } from "../types/auth";
 
 /**
- * Wagmi-optimized SIWE Authentication Service
- * Provides clean API layer for authentication operations using localStorage tokens
+ * Enhanced Wagmi-optimized SIWE Authentication Service
+ * Provides robust authentication with improved error handling, security, and performance
  */
 export class WagmiAuthService {
+  private static isAuthenticating = false;
+  private static authPromise: Promise<string> | null = null;
+  
+  // Rate limiting for security
+  private static lastNonceRequest = 0;
+  private static nonceRequestCount = 0;
+  private static readonly NONCE_RATE_LIMIT = 5; // Max 5 requests per minute
+  private static readonly RATE_LIMIT_WINDOW = 60000; // 1 minute
+
   /**
-   * Generate nonce for SIWE message
+   * Generate nonce for SIWE message with rate limiting and enhanced security
    * @param walletAddress - The connected wallet address
    * @param chainId - The chain ID (defaults to Avalanche Fuji)
    * @returns Promise<string> - The nonce string
    */
   static async generateNonce(walletAddress: string, chainId: number = 43113): Promise<string> {
     try {
-      // Get domain and origin for the nonce request
-      const domain =
-        typeof window !== "undefined"
-          ? window.location.host || "localhost:3001"
-          : "localhost:3001";
+      // Rate limiting check
+      const now = Date.now();
+      if (now - this.lastNonceRequest < this.RATE_LIMIT_WINDOW) {
+        if (this.nonceRequestCount >= this.NONCE_RATE_LIMIT) {
+          logger.warn("Nonce generation rate limit exceeded", {
+            address: walletAddress,
+            count: this.nonceRequestCount,
+          });
+          throw new Error("Rate limit exceeded. Please wait before requesting another nonce.");
+        }
+      } else {
+        // Reset rate limit counter after window
+        this.nonceRequestCount = 0;
+      }
 
-      const origin =
-        typeof window !== "undefined"
-          ? window.location.origin || "http://localhost:3001"
-          : "http://localhost:3001";
+      this.lastNonceRequest = now;
+      this.nonceRequestCount++;
 
-      // Send the fields that the backend expects (without nonce - backend will generate it)
+      // Validate inputs
+      if (!walletAddress || !this.isValidEthereumAddress(walletAddress)) {
+        throw new Error("Invalid wallet address provided");
+      }
+
+      if (!this.isValidChainId(chainId)) {
+        throw new Error("Invalid chain ID provided");
+      }
+
+      logger.auth("Generating nonce", { 
+        address: this.maskAddress(walletAddress), 
+        chainId,
+        requestCount: this.nonceRequestCount 
+      });
+
+      // Get domain and origin securely
+      const domain = this.getCurrentDomain();
+      const origin = this.getCurrentOrigin();
+
+      // Prepare request data with additional security fields
       const requestData = {
         domain: domain,
         address: walletAddress,
         uri: origin,
         version: "1",
-        chainId: chainId, // Use the provided chainId
+        chainId: chainId,
         statement: "Sign in to HeadBall Web3 Game",
         issuedAt: new Date().toISOString(),
-        // Note: No nonce field - backend will generate it
+        // Add security context
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+        timestamp: now,
       };
 
-      // Use POST for nonce generation (no auth needed)
+      logger.auth("Sending nonce request", { 
+        domain, 
+        chainId, 
+        addressMasked: this.maskAddress(walletAddress) 
+      });
+
+      // Use enhanced API client with retry logic
       const response = await apiClient.postNoAuth(
         API_ENDPOINTS.auth.nonce,
         requestData
@@ -50,23 +94,51 @@ export class WagmiAuthService {
 
       if (!response.ok) {
         const errorText = await response.text();
+        logger.error("Nonce generation failed", {
+          status: response.status,
+          error: errorText,
+          address: this.maskAddress(walletAddress),
+        });
         throw new Error(
           `Failed to get nonce: ${response.status} - ${errorText}`
         );
       }
 
-      // Backend returns nonce as plain text according to your code
+      // Backend returns nonce as plain text
       const nonce = await response.text();
 
-      if (!nonce) {
+      if (!nonce || !this.isValidNonce(nonce)) {
+        logger.error("Invalid nonce received from server", { 
+          nonceLength: nonce?.length || 0 
+        });
         throw new Error("Invalid nonce response from server");
       }
 
+      logger.auth("Nonce generated successfully", { 
+        nonceLength: nonce.length,
+        address: this.maskAddress(walletAddress) 
+      });
+
       return nonce;
     } catch (error) {
-      console.error("Nonce generation failed:", error);
+      logger.error("Nonce generation failed", {
+        error: error instanceof Error ? error.message : "Unknown error",
+        address: this.maskAddress(walletAddress),
+        chainId,
+      });
+      
+      // Provide user-friendly error messages
+      if (error instanceof Error) {
+        if (error.message.includes('rate limit')) {
+          throw error; // Re-throw rate limit errors as-is
+        }
+        if (error.message.includes('fetch')) {
+          throw new Error("Network error. Please check your connection and try again.");
+        }
+      }
+      
       throw new Error(
-        `Nonce generation failed: ${
+        `Authentication service unavailable: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
@@ -74,27 +146,46 @@ export class WagmiAuthService {
   }
 
   /**
-   * Alternative: Generate nonce using simple GET (no CORS preflight)
-   * Use this if your backend expects GET and you want to avoid OPTIONS preflight
+   * Alternative nonce generation using simple GET
+   * @param walletAddress - The connected wallet address
+   * @returns Promise<string> - The nonce string
    */
   static async generateNonceSimple(walletAddress: string): Promise<string> {
     try {
-      // Use simple GET without CORS-triggering headers
+      logger.auth("Generating nonce (simple method)", { 
+        address: this.maskAddress(walletAddress) 
+      });
+
       const response = await apiClient.getSimple(API_ENDPOINTS.auth.nonce);
 
       if (!response.ok) {
+        logger.error("Simple nonce generation failed", {
+          status: response.status,
+          address: this.maskAddress(walletAddress),
+        });
         throw new Error(`Failed to get nonce: ${response.status}`);
       }
 
-      const { nonce, success }: NonceResponse = await response.json();
+      const data: NonceResponse = await response.json();
 
-      if (!success || !nonce) {
+      if (!data.success || !data.nonce || !this.isValidNonce(data.nonce)) {
+        logger.error("Invalid simple nonce response", { 
+          success: data.success,
+          nonceLength: data.nonce?.length || 0 
+        });
         throw new Error("Invalid nonce response from server");
       }
 
-      return nonce;
+      logger.auth("Simple nonce generated successfully", { 
+        nonceLength: data.nonce.length 
+      });
+
+      return data.nonce;
     } catch (error) {
-      console.error("Nonce generation failed:", error);
+      logger.error("Simple nonce generation failed", {
+        error: error instanceof Error ? error.message : "Unknown error",
+        address: this.maskAddress(walletAddress),
+      });
       throw new Error(
         `Nonce generation failed: ${
           error instanceof Error ? error.message : "Unknown error"
@@ -104,220 +195,323 @@ export class WagmiAuthService {
   }
 
   /**
-   * Verify SIWE signature with backend and store token
-   * @param message - The SIWE message that was signed
-   * @param signature - The signature from wallet
-   * @param walletAddress - The wallet address that signed
-   * @returns Promise<AuthResponse> - Authentication result with user data
+   * Verify SIWE message and authenticate user with enhanced security
+   * @param verifyRequest - The verification request containing message and signature
+   * @returns Promise<AuthResponse> - The authentication response
    */
-  static async verifySignature(
-    message: string,
-    signature: string,
-    walletAddress: string
-  ): Promise<AuthResponse> {
+  static async verifyMessage(verifyRequest: VerifyRequest): Promise<AuthResponse> {
+    // Prevent concurrent authentication attempts
+    if (this.isAuthenticating) {
+      if (this.authPromise) {
+        logger.auth("Authentication already in progress, waiting for completion");
+        return this.authPromise as Promise<AuthResponse>;
+      }
+    }
+
+    this.isAuthenticating = true;
+
     try {
-      // Backend expects just message and signature
-      const verifyData = {
-        message,
-        signature,
+      this.authPromise = this._performVerification(verifyRequest);
+      const result = await this.authPromise;
+      
+      logger.auth("Authentication completed successfully", {
+        userId: result.user?.id,
+        address: this.maskAddress(result.user?.walletAddress || ''),
+      });
+      
+      return result;
+    } finally {
+      this.isAuthenticating = false;
+      this.authPromise = null;
+    }
+  }
+
+  private static async _performVerification(verifyRequest: VerifyRequest): Promise<AuthResponse> {
+    try {
+      // Validate the verification request
+      this.validateVerifyRequest(verifyRequest);
+
+      logger.auth("Starting message verification", {
+        messageLength: verifyRequest.message?.length || 0,
+        signatureLength: verifyRequest.signature?.length || 0,
+      });
+
+      // Add security context to the request
+      const enhancedRequest = {
+        ...verifyRequest,
+        timestamp: Date.now(),
+        userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+        origin: this.getCurrentOrigin(),
       };
 
       const response = await apiClient.postNoAuth(
         API_ENDPOINTS.auth.verify,
-        verifyData
+        enhancedRequest
       );
 
       if (!response.ok) {
-        let errorText = "";
-        try {
-          const errorData = await response.json();
-          errorText =
-            errorData.message || errorData.error || JSON.stringify(errorData);
-        } catch {
-          errorText = await response.text();
+        const errorData = await this.parseErrorResponse(response);
+        logger.error("Message verification failed", {
+          status: response.status,
+          error: errorData,
+        });
+        
+        // Provide specific error messages based on status
+        if (response.status === 401) {
+          throw new Error("Invalid signature or message. Please try signing again.");
+        } else if (response.status === 429) {
+          throw new Error("Too many authentication attempts. Please wait and try again.");
+        } else if (response.status >= 500) {
+          throw new Error("Authentication service temporarily unavailable. Please try again later.");
         }
-
-        throw new Error(errorText || `Verification failed: ${response.status}`);
+        
+        throw new Error(`Authentication failed: ${errorData.message || 'Unknown error'}`);
       }
 
-      const result = await response.json();
+      const authResponse: AuthResponse = await response.json();
 
-      // Transform backend response to match frontend AuthResponse interface
-      const authResult: AuthResponse = {
-        success: result.success,
-        user: result.data?.user
-          ? {
-              id: result.data.user.id,
-              walletAddress: result.data.user.walletAddress,
-              username: result.data.user.username,
-              profileImage: result.data.user.profileImage,
-              gameStats: result.data.user.gameStats,
-              createdAt: result.data.user.createdAt || new Date().toISOString(),
-              updatedAt: result.data.user.updatedAt || new Date().toISOString(),
-            }
-          : undefined,
-        message: result.message,
-        token: result.data?.token, // Extract token from response
-      };
+      // Validate the response
+      this.validateAuthResponse(authResponse);
 
-      if (!authResult.success) {
-        throw new Error(
-          authResult.message || "Authentication verification failed"
-        );
+      // Store authentication data securely
+      if (authResponse.token) {
+        tokenManager.setToken(authResponse.token);
+        logger.auth("Authentication token stored successfully");
       }
 
-      // Store token and user data in localStorage
-      if (authResult.token && authResult.user) {
-        tokenManager.setToken(authResult.token);
-        tokenManager.setUser(authResult.user);
+      if (authResponse.user) {
+        tokenManager.setUser(authResponse.user);
+        logger.auth("User data stored successfully", {
+          userId: authResponse.user.id,
+          address: this.maskAddress(authResponse.user.walletAddress),
+        });
       }
 
-      return authResult;
+      return authResponse;
     } catch (error) {
-      console.error("Signature verification failed:", error);
-      throw error;
+      logger.error("Message verification error", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+
+      if (error instanceof Error) {
+        throw error; // Re-throw known errors
+      }
+      
+      throw new Error("Authentication verification failed");
     }
   }
 
   /**
-   * Logout user and clear localStorage
-   * @returns Promise<void>
+   * Enhanced logout with proper cleanup
+   * @returns Promise<boolean> - Success status
    */
-  static async logout(): Promise<void> {
+  static async logout(): Promise<boolean> {
     try {
-      // Call backend logout endpoint (optional - since we're using tokens)
-      const response = await apiClient.post(API_ENDPOINTS.auth.logout);
+      logger.auth("Starting logout process");
 
-      // Don't throw on logout errors - always clear local state
-      if (!response.ok) {
-        console.warn(
-          "Logout endpoint failed, but continuing with local cleanup"
-        );
+      // Call logout endpoint if authenticated
+      const token = tokenManager.getToken();
+      if (token && tokenManager.isTokenValid()) {
+        try {
+          const response = await apiClient.post(API_ENDPOINTS.auth.logout);
+          if (!response.ok) {
+            logger.warn("Server logout failed, proceeding with local logout", {
+              status: response.status,
+            });
+          } else {
+            logger.auth("Server logout successful");
+          }
+        } catch (error) {
+          logger.warn("Server logout error, proceeding with local logout", {
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
       }
-    } catch (error) {
-      console.warn("Logout request failed:", error);
-      // Don't throw - logout should always succeed locally
-    } finally {
-      // Always clear localStorage
+
+      // Clear local storage
       tokenManager.removeToken();
+      
+      // Clear any auth-related data from session storage
+      if (typeof window !== 'undefined') {
+        try {
+          sessionStorage.removeItem('authNonce');
+          sessionStorage.removeItem('authTimestamp');
+        } catch (error) {
+          logger.warn("Failed to clear session storage", { error });
+        }
+      }
+
+      logger.auth("Logout completed successfully");
+      return true;
+    } catch (error) {
+      logger.error("Logout error", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      
+      // Even if server logout fails, clear local data
+      tokenManager.removeToken();
+      return false;
     }
   }
 
   /**
-   * Get current user profile by user ID
-   * @param userId - The user ID
-   * @returns Promise<User> - User profile data
+   * Check current authentication status
+   * @returns Promise<User | null> - Current user or null if not authenticated
    */
-  static async getCurrentUser(userId: string): Promise<User> {
+  static async getCurrentUser(): Promise<User | null> {
     try {
-      const response = await apiClient.get(
-        API_ENDPOINTS.users.getProfile(userId)
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to get user profile: ${response.status}`);
+      const token = tokenManager.getToken();
+      if (!token || !tokenManager.isTokenValid()) {
+        logger.auth("No valid token found");
+        return null;
       }
 
-      const userData: User = await response.json();
-      return userData;
-    } catch (error) {
-      console.error("Get user failed:", error);
-      throw new Error(
-        `Failed to get user profile: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    }
-  }
-
-  /**
-   * Get user by wallet address
-   * @param walletAddress - The wallet address
-   * @returns Promise<User> - User profile data
-   */
-  static async getUserByWallet(walletAddress: string): Promise<User> {
-    try {
-      const response = await apiClient.get(
-        API_ENDPOINTS.users.getByWallet(walletAddress)
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to get user by wallet: ${response.status}`);
+      const user = tokenManager.getUser();
+      if (!user) {
+        logger.auth("No user data found in storage");
+        return null;
       }
 
-      const userData: User = await response.json();
-      return userData;
+      // Optionally verify with server
+      try {
+        const response = await apiClient.get(API_ENDPOINTS.users.getProfile(user.id));
+        if (response.ok) {
+          const updatedUser = await response.json();
+          tokenManager.setUser(updatedUser);
+          return updatedUser;
+        }
+      } catch (error) {
+        logger.warn("Failed to verify user with server", { error });
+        // Return cached user data if server verification fails
+      }
+
+      return user;
     } catch (error) {
-      console.error("Get user by wallet failed:", error);
-      throw new Error(
-        `Failed to get user by wallet: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      logger.error("Get current user error", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      return null;
     }
   }
 
   /**
    * Refresh authentication token
-   * @returns Promise<AuthResponse> - Refreshed authentication result
+   * @returns Promise<boolean> - Success status
    */
-  static async refreshAuth(): Promise<AuthResponse> {
+  static async refreshAuth(): Promise<boolean> {
     try {
-      const response = await apiClient.post(API_ENDPOINTS.auth.refresh);
-
-      if (!response.ok) {
-        throw new Error(`Token refresh failed: ${response.status}`);
-      }
-
-      const authResult: AuthResponse = await response.json();
-
-      if (!authResult.success) {
-        throw new Error(authResult.message || "Token refresh failed");
-      }
-
-      // Update token if new one is provided
-      if (authResult.token) {
-        tokenManager.setToken(authResult.token);
-      }
-
-      // Update user if provided
-      if (authResult.user) {
-        tokenManager.setUser(authResult.user);
-      }
-
-      return authResult;
+      logger.auth("Refreshing authentication");
+      return await tokenManager.refreshToken();
     } catch (error) {
-      console.error("Token refresh failed:", error);
-      throw error;
+      logger.error("Auth refresh error", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      return false;
+    }
+  }
+
+  // Private utility methods for validation and security
+
+  private static isValidEthereumAddress(address: string): boolean {
+    return /^0x[a-fA-F0-9]{40}$/.test(address);
+  }
+
+  private static isValidChainId(chainId: number): boolean {
+    return Number.isInteger(chainId) && chainId > 0 && chainId < 2147483647;
+  }
+
+  private static isValidNonce(nonce: string): boolean {
+    return typeof nonce === 'string' && nonce.length >= 8 && nonce.length <= 64;
+  }
+
+  private static maskAddress(address: string): string {
+    if (!address || address.length < 10) return 'invalid';
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
+  }
+
+  private static getCurrentDomain(): string {
+    if (typeof window === "undefined") return "localhost:3001";
+    return window.location.host || "localhost:3001";
+  }
+
+  private static getCurrentOrigin(): string {
+    if (typeof window === "undefined") return "http://localhost:3001";
+    return window.location.origin || "http://localhost:3001";
+  }
+
+  private static validateVerifyRequest(request: VerifyRequest): void {
+    if (!request.message) {
+      throw new Error("Message is required for verification");
+    }
+    if (!request.signature) {
+      throw new Error("Signature is required for verification");
+    }
+    if (typeof request.message !== 'string' || typeof request.signature !== 'string') {
+      throw new Error("Message and signature must be strings");
+    }
+    if (request.message.length > 10000) {
+      throw new Error("Message too long");
+    }
+    if (request.signature.length > 1000) {
+      throw new Error("Signature too long");
+    }
+  }
+
+  private static validateAuthResponse(response: AuthResponse): void {
+    if (!response.success) {
+      throw new Error(response.message || "Authentication failed");
+    }
+    if (!response.token) {
+      throw new Error("No authentication token received");
+    }
+    if (!response.user || !response.user.id) {
+      throw new Error("Invalid user data received");
+    }
+  }
+
+  private static async parseErrorResponse(response: Response): Promise<any> {
+    try {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        return await response.json();
+      } else {
+        const text = await response.text();
+        return { message: text };
+      }
+    } catch (error) {
+      return { message: `HTTP ${response.status} ${response.statusText}` };
     }
   }
 
   /**
-   * Check if user is currently authenticated (has valid token)
-   * @returns boolean - Authentication status
+   * Get authentication health status
+   * @returns Object with authentication status information
    */
-  static isAuthenticated(): boolean {
-    return tokenManager.isTokenValid();
-  }
+  static getAuthStatus(): {
+    isAuthenticated: boolean;
+    hasValidToken: boolean;
+    user: User | null;
+    tokenExpiry: number | null;
+  } {
+    const token = tokenManager.getToken();
+    const isValidToken = token ? tokenManager.isTokenValid() : false;
+    const user = tokenManager.getUser();
+    
+    let tokenExpiry = null;
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        tokenExpiry = payload.exp * 1000; // Convert to milliseconds
+      } catch (error) {
+        logger.warn("Failed to parse token expiry", { error });
+      }
+    }
 
-  /**
-   * Get current user from localStorage
-   * @returns User | null - Current user data
-   */
-  static getCurrentUserFromStorage(): User | null {
-    return tokenManager.getUser();
+    return {
+      isAuthenticated: isValidToken && !!user,
+      hasValidToken: isValidToken,
+      user,
+      tokenExpiry,
+    };
   }
 }
-
-// Export individual functions for convenience
-export const {
-  generateNonce,
-  generateNonceSimple,
-  verifySignature,
-  logout,
-  getCurrentUser,
-  getUserByWallet,
-  refreshAuth,
-  isAuthenticated,
-  getCurrentUserFromStorage,
-} = WagmiAuthService;

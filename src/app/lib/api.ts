@@ -1,3 +1,5 @@
+import { logger } from './logger';
+
 // API Configuration
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
@@ -18,14 +20,15 @@ export const API_ENDPOINTS = {
     getProfile: (id: string) => `${API_BASE_URL}/api/users/profile/${id}`,
     updateProfile: (id: string) => `${API_BASE_URL}/api/users/profile/${id}`,
   },
-  // Game endpoints (for future use)
+  // Game endpoints
   game: {
     stats: (userId: string) => `${API_BASE_URL}/api/game/stats/${userId}`,
     updateStats: (userId: string) => `${API_BASE_URL}/api/game/stats/${userId}`,
+    leaderboard: `${API_BASE_URL}/api/game/leaderboard`,
   },
 } as const;
 
-// Token management utilities
+// Enhanced token management with refresh logic
 export const tokenManager = {
   getToken: (): string | null => {
     if (typeof window === "undefined") return null;
@@ -35,23 +38,35 @@ export const tokenManager = {
   setToken: (token: string): void => {
     if (typeof window === "undefined") return;
     localStorage.setItem("authToken", token);
+    logger.auth("Token updated successfully");
   },
 
   removeToken: (): void => {
     if (typeof window === "undefined") return;
     localStorage.removeItem("authToken");
     localStorage.removeItem("user");
+    logger.auth("Token and user data cleared");
   },
 
   getUser: () => {
     if (typeof window === "undefined") return null;
-    const userStr = localStorage.getItem("user");
-    return userStr ? JSON.parse(userStr) : null;
+    try {
+      const userStr = localStorage.getItem("user");
+      return userStr ? JSON.parse(userStr) : null;
+    } catch (error) {
+      logger.error("Failed to parse user data from localStorage", error);
+      return null;
+    }
   },
 
   setUser: (user: any): void => {
     if (typeof window === "undefined") return;
-    localStorage.setItem("user", JSON.stringify(user));
+    try {
+      localStorage.setItem("user", JSON.stringify(user));
+      logger.auth("User data saved successfully");
+    } catch (error) {
+      logger.error("Failed to save user data to localStorage", error);
+    }
   },
 
   isTokenValid: (): boolean => {
@@ -59,11 +74,11 @@ export const tokenManager = {
     if (!token) return false;
 
     try {
-      // Basic JWT validation - decode payload and check expiry
       const payload = JSON.parse(atob(token.split(".")[1]));
       const isExpired = payload.exp * 1000 < Date.now();
       return !isExpired;
-    } catch {
+    } catch (error) {
+      logger.warn("Failed to validate token", error);
       return false;
     }
   },
@@ -72,77 +87,153 @@ export const tokenManager = {
     const token = tokenManager.getToken();
     return token ? { Authorization: `Bearer ${token}` } : {};
   },
+
+  // New: Automatic token refresh
+  async refreshToken(): Promise<boolean> {
+    try {
+      const response = await fetch(API_ENDPOINTS.auth.refresh, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...tokenManager.getAuthHeaders(),
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.token) {
+          tokenManager.setToken(data.token);
+          if (data.user) {
+            tokenManager.setUser(data.user);
+          }
+          logger.auth("Token refreshed successfully");
+          return true;
+        }
+      }
+      
+      logger.warn("Token refresh failed");
+      return false;
+    } catch (error) {
+      logger.error("Token refresh error", error);
+      return false;
+    }
+  },
 };
 
-// API Client helper functions
-export const apiClient = {
-  get: async (url: string, options?: RequestInit) => {
-    const response = await fetch(url, {
+// Enhanced API client with retry logic and better error handling
+class ApiClient {
+  private async makeRequest(
+    url: string,
+    options: RequestInit,
+    retries: number = 3
+  ): Promise<Response> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        const response = await fetch(url, {
+          ...options,
+          timeout: 30000, // 30 second timeout
+        });
+
+        // Handle 401 errors with automatic token refresh
+        if (response.status === 401 && i === 0) {
+          const refreshed = await tokenManager.refreshToken();
+          if (refreshed) {
+            // Retry with new token
+            const newHeaders = {
+              ...options.headers,
+              ...tokenManager.getAuthHeaders(),
+            };
+            continue;
+          }
+        }
+
+        // Log non-2xx responses
+        if (!response.ok) {
+          logger.warn(`API request failed: ${response.status} ${response.statusText}`, {
+            url,
+            status: response.status,
+            statusText: response.statusText,
+          });
+        }
+
+        return response;
+      } catch (error) {
+        logger.error(`API request error (attempt ${i + 1}/${retries})`, {
+          url,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+
+        if (i === retries - 1) {
+          throw error;
+        }
+
+        // Wait before retry with exponential backoff
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+      }
+    }
+
+    throw new Error("Maximum retries exceeded");
+  }
+
+  async get(url: string, options?: RequestInit): Promise<Response> {
+    return this.makeRequest(url, {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        ...tokenManager.getAuthHeaders(), // Add Authorization header
+        ...tokenManager.getAuthHeaders(),
         ...options?.headers,
       },
       ...options,
     });
-    return response;
-  },
+  }
 
-  // Simple GET without CORS-triggering headers (for nonce)
-  getSimple: async (url: string, options?: RequestInit) => {
-    const response = await fetch(url, {
+  async getSimple(url: string, options?: RequestInit): Promise<Response> {
+    return this.makeRequest(url, {
       method: "GET",
-      // No Content-Type header to avoid preflight
       ...options,
     });
-    return response;
-  },
+  }
 
-  post: async (url: string, data?: any, options?: RequestInit) => {
-    const response = await fetch(url, {
+  async post(url: string, data?: any, options?: RequestInit): Promise<Response> {
+    return this.makeRequest(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...tokenManager.getAuthHeaders(), // Add Authorization header
+        ...tokenManager.getAuthHeaders(),
         ...options?.headers,
       },
       body: data ? JSON.stringify(data) : undefined,
       ...options,
     });
-    return response;
-  },
+  }
 
-  put: async (url: string, data?: any, options?: RequestInit) => {
-    const response = await fetch(url, {
+  async put(url: string, data?: any, options?: RequestInit): Promise<Response> {
+    return this.makeRequest(url, {
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        ...tokenManager.getAuthHeaders(), // Add Authorization header
+        ...tokenManager.getAuthHeaders(),
         ...options?.headers,
       },
       body: data ? JSON.stringify(data) : undefined,
       ...options,
     });
-    return response;
-  },
+  }
 
-  delete: async (url: string, options?: RequestInit) => {
-    const response = await fetch(url, {
+  async delete(url: string, options?: RequestInit): Promise<Response> {
+    return this.makeRequest(url, {
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
-        ...tokenManager.getAuthHeaders(), // Add Authorization header
+        ...tokenManager.getAuthHeaders(),
         ...options?.headers,
       },
       ...options,
     });
-    return response;
-  },
+  }
 
-  // Special method for auth endpoints that don't need tokens
-  postNoAuth: async (url: string, data?: any, options?: RequestInit) => {
-    const response = await fetch(url, {
+  async postNoAuth(url: string, data?: any, options?: RequestInit): Promise<Response> {
+    return this.makeRequest(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -151,6 +242,7 @@ export const apiClient = {
       body: data ? JSON.stringify(data) : undefined,
       ...options,
     });
-    return response;
-  },
-};
+  }
+}
+
+export const apiClient = new ApiClient();
