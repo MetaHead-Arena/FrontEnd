@@ -1,6 +1,7 @@
 import { GAME_CONFIG, PIXEL_SPRITE } from "./config.js";
 import { Player } from "./Player.js";
 import { RemotePlayer } from "./RemotePlayer.js";
+import { logger } from "../../services/../app/lib/logger.js";
 
 export class OnlineGameScene extends Phaser.Scene {
   constructor() {
@@ -77,24 +78,24 @@ export class OnlineGameScene extends Phaser.Scene {
       // Check if position was already set by room events
       this.playerPosition = window.__HEADBALL_PLAYER_POSITION || null;
 
-      console.log("=== ONLINE POSITION INIT DEBUG ===");
-      console.log("Initial player position:", this.playerPosition);
+      logger.game("Online position initialization", {
+        initialPosition: this.playerPosition,
+        hasGlobalPosition: !!window.__HEADBALL_PLAYER_POSITION
+      });
 
       // If no position set yet, it will be set when room-joined event is received
       if (!this.playerPosition) {
-        console.log(
-          "⏳ Player position not set yet - will be set by room events"
-        );
+        logger.debug("Player position not set yet - will be set by room events");
         // Set temporary defaults that will be overridden
         this.playerPosition = "player1"; // Temporary fallback
         this.isBallAuthority = true;
       } else {
         this.isBallAuthority = this.playerPosition === "player1";
-        console.log("✅ Using existing player position:", this.playerPosition);
-        console.log("Ball authority:", this.isBallAuthority);
+        logger.game("Using existing player position", {
+          position: this.playerPosition,
+          ballAuthority: this.isBallAuthority
+        });
       }
-
-      console.log("=== END ONLINE POSITION INIT ===");
 
       // Store ball authority in global scope for debugging
       window.__HEADBALL_IS_BALL_AUTHORITY = this.isBallAuthority;
@@ -265,9 +266,10 @@ export class OnlineGameScene extends Phaser.Scene {
             this.setupOnlineEventListeners();
           }
 
-          console.log("Online multiplayer initialized");
-          console.log("Player position:", this.playerPosition);
-          console.log("Ball authority:", this.isBallAuthority);
+              logger.game("Online multiplayer initialized", {
+      playerPosition: this.playerPosition,
+      ballAuthority: this.isBallAuthority
+    });
         })
         .catch((error) => {
           console.error("Failed to initialize online multiplayer:", error);
